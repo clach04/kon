@@ -1,5 +1,9 @@
-<h1 align="center">Kon</h1>
-<p align="center">A minimal terminal coding agent with a small core, strong defaults, and user-owned context.</p>
+<pre align="center">
+░█░█░█▀█░█▀█
+░█▀▄░█░█░█░█
+░▀░▀░▀▀▀░▀░▀
+</pre>
+<p align="center">Minimal coding agent harness</p>
 <p align="center">
   <a href="https://pypi.org/project/kon-coding-agent/"><img alt="PyPI" src="https://img.shields.io/pypi/v/kon-coding-agent?style=flat-square" /></a>
   <a href="https://www.python.org/downloads/release/python-3120/"><img alt="Python" src="https://img.shields.io/badge/python-3.12%2B-blue?style=flat-square" /></a>
@@ -7,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/kon-screenshot.png" alt="Kon terminal UI screenshot" width="490" />
+  <img src="docs/images/kon-screenshot.png" alt="Kon terminal UI screenshot" width="720" />
 </p>
 
 Kon is a minimal coding agent focused on a tiny core prompt, a small built-in toolset, and project-specific context layered on top only when you want it. The default system prompt stays **under 270 tokens**, and even including the built-in tool descriptions and parameter schemas, the fixed harness stays at about **~1,000 tokens**. The core experience is built around just **6 default tools** plus **2 optional web tools**.
