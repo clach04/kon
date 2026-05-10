@@ -221,8 +221,9 @@ class ToolBlock(Static):
         result = Text()
         formatted_name = " ".join(word.capitalize() for word in self._name.split("_"))
 
-        icon_style = colors.dim
-        name_style = colors.dim
+        success_style = Style(color=colors.muted, bold=True)
+        icon_style: str | Style = success_style
+        name_style: str | Style = success_style
         if self._success is None:
             icon_style = colors.running
             name_style = colors.running
@@ -269,7 +270,7 @@ class ToolBlock(Static):
             content = self._call_msg
 
         rendered = self._render_markup_safe(content)
-        return Text(rendered.plain, style=config.ui.colors.muted)
+        return Text(rendered.plain, style=config.ui.colors.dim)
 
     def _render_markup_safe(self, content: str) -> Text:
         try:
