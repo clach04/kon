@@ -375,6 +375,8 @@ class InputBox(Vertical):
             # Tell app to apply the current selection
             self.post_message(self.CompletionSelect())
             return
+        if getattr(self.app, "start_queue_edit", lambda: False)():
+            return
         self._do_submit(steer=False)
 
     def action_steer_submit(self) -> None:
@@ -396,6 +398,14 @@ class InputBox(Vertical):
         display_text = self._strip_skill_markers(raw_text)
         query_text = self._strip_skill_markers(query_text)
         self._add_to_history(query_text)
+        try:
+            if getattr(self.app, "finish_queue_edit", lambda _display, _query: False)(
+                display_text, query_text
+            ):
+                self.clear(reset_pastes=True)
+                return
+        except Exception:
+            pass
         self.post_message(
             self.Submitted(
                 display_text,
@@ -425,6 +435,8 @@ class InputBox(Vertical):
             return
 
         app = self.app
+        if getattr(app, "cancel_queue_edit", lambda: False)():
+            return
         if getattr(app, "deny_pending_approval", lambda: False)():
             return
         if getattr(app, "_is_running", False):
@@ -440,6 +452,8 @@ class InputBox(Vertical):
         row, _ = textarea.selection.start
         if row > 0:
             textarea.action_cursor_up()
+        elif getattr(self.app, "select_queue_from_input", lambda _direction: False)(-1):
+            return
         elif not textarea.text.strip() or self._history.is_browsing:
             self._history_navigate(-1)
         else:
@@ -453,6 +467,8 @@ class InputBox(Vertical):
         row, _ = textarea.selection.start
         if row < textarea.document.line_count - 1:
             textarea.action_cursor_down()
+        elif getattr(self.app, "select_queue_from_input", lambda _direction: False)(1):
+            return
         elif self._history.is_browsing:
             self._history_navigate(1)
         else:

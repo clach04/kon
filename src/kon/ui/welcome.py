@@ -23,6 +23,7 @@ _SHORTCUT_ROWS = (
     (
         ("enter", "queue"),
         ("alt+enter", "steer"),
+        ("↑/↓", "select queue"),
         ("ctrl+t", "toggle thinking"),
         ("ctrl+shift+t", "cycle thinking"),
     ),

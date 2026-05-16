@@ -333,6 +333,8 @@ class QueueDisplay(Vertical):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._items: list[tuple[str, bool]] = []  # (text, is_steer)
+        self._selected: int | None = None
+        self._editing: int | None = None
         self._content_label: Label | None = None
 
     def compose(self) -> ComposeResult:
@@ -365,19 +367,35 @@ class QueueDisplay(Vertical):
         content_width = max(0, self.size.width - 2) if self.size.width else 0
         result = Text()
         result.append("Queue", style="bold " + dim_color)
-        for text, is_steer in ordered:
-            prefix = " L "
+        result.append(
+            " (↑/↓ select, enter edit, ctrl+d delete, esc discard edit)", style=dim_color
+        )
+        for index, (text, is_steer) in enumerate(ordered):
+            is_selected = index == self._selected
+            is_editing = index == self._editing
+            prefix = " > " if is_selected else " L "
+            edit_prefix = "[editing] " if is_editing else ""
             steer_prefix = "[steer] " if is_steer else ""
-            available = max(0, content_width - len(prefix) - len(steer_prefix))
+            available = max(0, content_width - len(prefix) - len(edit_prefix) - len(steer_prefix))
             truncated = self._truncate_text(text, available)
-            result.append("\n" + prefix, style=dim_color)
+            style = config.ui.colors.accent if is_selected else dim_color
+            result.append("\n" + prefix, style=style)
+            if is_editing:
+                result.append(edit_prefix, style=style)
             if is_steer:
-                result.append(steer_prefix, style=dim_color)
-            result.append(truncated, style=dim_color)
+                result.append(steer_prefix, style=style)
+            result.append(truncated, style=style)
         return result
 
-    def update_items(self, items: list[tuple[str, bool]]) -> None:
+    def update_items(
+        self,
+        items: list[tuple[str, bool]],
+        selected: int | None = None,
+        editing: int | None = None,
+    ) -> None:
         self._items = items
+        self._selected = selected
+        self._editing = editing
         if not items:
             self._queue_label.update("")
             self.add_class("-hidden")

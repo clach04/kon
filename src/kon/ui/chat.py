@@ -219,6 +219,7 @@ class ChatLog(VerticalScroll):
             (
                 ("enter", "queue"),
                 ("alt+enter", "steer"),
+                ("↑/↓", "select queue"),
                 ("ctrl+t", "toggle thinking"),
                 ("ctrl+shift+t", "cycle thinking"),
             ),
@@ -363,6 +364,9 @@ class ChatLog(VerticalScroll):
             ("ctrl+c", "Clear input (press twice to quit)"),
             ("ctrl+t", "Toggle thinking visibility"),
             ("ctrl+o", "Toggle tool output expansion"),
+            ("↑/↓ on queue", "Select queued messages"),
+            ("enter on queue", "Edit selected queued message"),
+            ("ctrl+d on queue", "Delete selected queued message"),
             ("ctrl+shift+t", "Cycle thinking levels"),
             ("shift+tab", "Cycle permission mode"),
         ]
