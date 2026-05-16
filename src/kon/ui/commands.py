@@ -53,6 +53,8 @@ class CommandsMixin:
         query_one: Any
         run_worker: Any
         call_later: Any
+        _settings_active: bool
+        _settings_selected_value: str | None
 
     # Methods from other mixins/main class
     if TYPE_CHECKING:
@@ -82,6 +84,9 @@ class CommandsMixin:
             return True
         if cmd == "new":
             self._new_conversation()
+            return True
+        if cmd == "settings":
+            self._handle_settings_command()
             return True
         if cmd == "themes":
             self._handle_themes_command(args)
@@ -236,11 +241,7 @@ class CommandsMixin:
 
         current_theme = config.ui.theme
         items = [
-            ListItem(
-                value=theme_id,
-                label=f"{label} ✓" if theme_id == current_theme else label,
-                description=theme_id,
-            )
+            ListItem(value=theme_id, label=f"{label} ✓" if theme_id == current_theme else label)
             for theme_id, label in get_theme_options()
         ]
 
@@ -285,15 +286,13 @@ class CommandsMixin:
                 )
             return
 
-        descriptions = {
-            level: "current session only" for level in self._runtime.provider.thinking_levels
-        }
-        self._show_selection_picker(
-            self._build_choice_items(
-                self._runtime.provider.thinking_levels, self._runtime.thinking_level, descriptions
-            ),
-            SelectionMode.THINKING,
-        )
+        items = [
+            ListItem(
+                value=level, label=f"{level} ✓" if level == self._runtime.thinking_level else level
+            )
+            for level in self._runtime.provider.thinking_levels
+        ]
+        self._show_selection_picker(items, SelectionMode.THINKING)
 
     def _select_thinking_level(self, level: str) -> None:
         if self._runtime.provider is None:
@@ -329,6 +328,66 @@ class CommandsMixin:
         config.notifications.enabled = mode == "on"
         chat = self.query_one("#chat-log", ChatLog)
         chat.show_status(f"Notifications turned {mode}")
+
+    # -------------------------------------------------------------------------
+    # Settings (unified panel for themes, permissions, notifications, thinking)
+    # -------------------------------------------------------------------------
+
+    def _build_settings_items(self) -> list[ListItem[str]]:
+        notification_status = "on" if config.notifications.enabled else "off"
+        try:
+            thinking_level = self._runtime.thinking_level or "off"
+        except Exception:
+            thinking_level = "off"
+
+        return [
+            ListItem(
+                value="notifications", label="notifications", description=notification_status
+            ),
+            ListItem(
+                value="permissions", label="permissions", description=config.permissions.mode
+            ),
+            ListItem(value="themes", label="themes", description=config.ui.theme),
+            ListItem(value="thinking", label="thinking", description=thinking_level),
+        ]
+
+    def _show_settings_picker(self, selected_value: str | None = None) -> None:
+        items = self._build_settings_items()
+        self._show_selection_picker(items, SelectionMode.SETTINGS, max_label_width=40)
+        self._settings_selected_value = selected_value
+        if selected_value is not None:
+            completion_list = self.query_one("#completion-list", FloatingList)
+            completion_list.select_value(selected_value)
+
+    def _handle_settings_command(self) -> None:
+        self._show_settings_picker()
+
+    def _handle_settings_select(self, item_value: str) -> None:
+        if item_value == "notifications":
+            current_enabled = config.notifications.enabled
+            config.notifications.enabled = not current_enabled
+            mode: NotificationMode = "on" if config.notifications.enabled else "off"
+            chat = self.query_one("#chat-log", ChatLog)
+            chat.show_status(f"Notifications turned {mode}")
+            self._show_settings_picker(selected_value=item_value)
+
+        elif item_value == "permissions":
+            current: PermissionMode = config.permissions.mode
+            new_mode: PermissionMode = "auto" if current == "prompt" else "prompt"
+            config.permissions.mode = new_mode
+            info_bar = self.query_one("#info-bar", InfoBar)
+            info_bar.set_permission_mode(new_mode)
+            chat = self.query_one("#chat-log", ChatLog)
+            chat.show_status(f"Permission mode changed to {new_mode}")
+            self._show_settings_picker(selected_value=item_value)
+
+        elif item_value == "themes":
+            self._settings_active = True
+            self._handle_themes_command("")
+
+        elif item_value == "thinking":
+            self._settings_active = True
+            self._handle_thinking_command("")
 
     def _select_theme(self, theme_id: str) -> None:
         set_theme(theme_id)

@@ -145,12 +145,12 @@ def test_thinking_command_without_argument_opens_picker():
     assert fake._selection_mode == SelectionMode.THINKING
     assert fake.completion_list.searchable is True
     assert [(item.value, item.label, item.description) for item in fake.completion_list.items] == [
-        ("none", "none", "current session only"),
-        ("minimal", "minimal", "current session only"),
-        ("low", "low ✓", "current session only"),
-        ("medium", "medium", "current session only"),
-        ("high", "high", "current session only"),
-        ("xhigh", "xhigh", "current session only"),
+        ("none", "none", ""),
+        ("minimal", "minimal", ""),
+        ("low", "low ✓", ""),
+        ("medium", "medium", ""),
+        ("high", "high", ""),
+        ("xhigh", "xhigh", ""),
     ]
 
 

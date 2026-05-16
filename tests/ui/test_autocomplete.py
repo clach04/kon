@@ -282,14 +282,16 @@ def test_fallback_works_without_fd(provider: FilePathProvider):
     assert "main.py" in labels
 
 
-def test_default_slash_commands_include_copy_compact_and_handoff():
+def test_default_slash_commands_include_settings_copy_compact_and_handoff():
     names = {cmd.name for cmd in DEFAULT_COMMANDS}
+    assert "settings" in names
     assert "copy" in names
     assert "compact" in names
     assert "handoff" in names
-    assert "permissions" in names
-    assert "thinking" in names
-    assert "notifications" in names
+    assert "themes" not in names
+    assert "permissions" not in names
+    assert "thinking" not in names
+    assert "notifications" not in names
 
 
 def test_slash_provider_triggers_mid_input_for_skills_only():

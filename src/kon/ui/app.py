@@ -167,6 +167,8 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
         self._hide_thinking = False
         self._fd_path: str | None = None
         self._selection_mode: SelectionMode | None = None
+        self._settings_active: bool = False
+        self._settings_selected_value: str | None = None
         self._shell_tool_counter = 0
 
         self._pending_queue: deque[tuple[str, str]] = deque(maxlen=QueueDisplay.MAX_QUEUE)
@@ -502,6 +504,12 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
             completion_list.hide()
 
             if self._selection_mode is not None:
+                # If we were in a sub-picker from settings, go back to settings
+                if self._settings_active:
+                    self._settings_active = False
+                    self._show_settings_picker()
+                    return
+
                 self._selection_mode = None
                 input_box.clear()
                 input_box.set_autocomplete_enabled(True)
@@ -532,16 +540,24 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
                 self._reset_ctrl_d_delete_state()
 
             match selection_mode:
+                case SelectionMode.SETTINGS:
+                    self._handle_settings_select(item.value)
                 case SelectionMode.SESSION:
                     self.run_worker(self._load_session(item.value.path), exclusive=True)
                 case SelectionMode.MODEL:
                     self._select_model(item.value)
                 case SelectionMode.THEME:
                     self._select_theme(item.value)
+                    if self._settings_active:
+                        self._settings_active = False
+                        self.call_later(self._show_settings_picker)
                 case SelectionMode.PERMISSIONS:
                     self._select_permission_mode(item.value)
                 case SelectionMode.THINKING:
                     self._select_thinking_level(item.value)
+                    if self._settings_active:
+                        self._settings_active = False
+                        self.call_later(self._show_settings_picker)
                 case SelectionMode.NOTIFICATIONS:
                     self._select_notifications_mode(item.value)
                 case SelectionMode.LOGIN:
@@ -572,6 +588,12 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
             return
         completion_list = self.query_one("#completion-list", FloatingList)
         completion_list.set_search_query(event.query)
+        if (
+            self._selection_mode == SelectionMode.SETTINGS
+            and not event.query
+            and self._settings_selected_value is not None
+        ):
+            completion_list.select_value(self._settings_selected_value)
 
     @on(InputBox.CompletionMove)
     def on_completion_move(self, event: InputBox.CompletionMove) -> None:

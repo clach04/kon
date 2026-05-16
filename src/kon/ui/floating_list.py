@@ -201,6 +201,13 @@ class FloatingList[T](Widget):
             self._selected_index = max(0, len(items) - 1)
         self._render_key += 1
 
+    def select_value(self, value: T) -> None:
+        for index, item in enumerate(self._items):
+            if item.value == value:
+                self._selected_index = index
+                self._render_key += 1
+                return
+
     def move_up(self) -> None:
         if not self._items:
             return

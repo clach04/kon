@@ -10,3 +10,4 @@ class SelectionMode(StrEnum):
     PERMISSIONS = "permissions"
     THINKING = "thinking"
     NOTIFICATIONS = "notifications"
+    SETTINGS = "settings"

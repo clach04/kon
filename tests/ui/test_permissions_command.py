@@ -78,12 +78,12 @@ class FakeCommands(CommandsMixin):
         self.selected_modes.append(mode)
 
 
-def test_permissions_command_in_default_commands():
-    permissions_cmd = next((cmd for cmd in DEFAULT_COMMANDS if cmd.name == "permissions"), None)
+def test_settings_command_in_default_commands():
+    settings_cmd = next((cmd for cmd in DEFAULT_COMMANDS if cmd.name == "settings"), None)
 
-    assert permissions_cmd is not None
-    assert permissions_cmd.description == "change permission mode"
-    assert isinstance(permissions_cmd, SlashCommand)
+    assert settings_cmd is not None
+    assert settings_cmd.description == "themes, permissions, thinking, notifications"
+    assert isinstance(settings_cmd, SlashCommand)
 
 
 def test_permissions_selection_mode():
