@@ -20,6 +20,7 @@ def test_tree_navigation_branches_without_overwriting(tmp_path, monkeypatch):
         "root",
         "branch",
     ]
+    assert original_leaf is not None
     assert session.get_entry(original_leaf) is not None
     assert len([e for e in session.all_entries if isinstance(e, MessageEntry)]) == 3
 
@@ -34,6 +35,7 @@ def test_leaf_navigation_persists(tmp_path, monkeypatch):
     session.move_to(root_id)
     session.ensure_persisted()
 
+    assert session.session_file is not None
     loaded = Session.load(session.session_file)
 
     assert loaded.leaf_id == root_id

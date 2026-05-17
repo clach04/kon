@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from rich.text import Text
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.message import Message
 from textual.reactive import reactive
 from textual.widget import Widget
@@ -33,7 +33,7 @@ class FlatNode:
 
 
 class TreeSelector(Widget):
-    BINDINGS: ClassVar[list[Binding]] = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("up", "move_up", "Move", priority=True),
         Binding("down", "move_down", "Move", priority=True),
         Binding("left,pageup", "page_up", "Page", priority=True),
@@ -214,7 +214,8 @@ class TreeSelector(Widget):
         current_id = self._current_leaf_id
         while current_id:
             self._active_path_ids.add(current_id)
-            current_id = by_id.get(current_id).parent_id if by_id.get(current_id) else None
+            entry = by_id.get(current_id)
+            current_id = entry.parent_id if entry else None
 
     def _find_nearest_visible_index(self, entry_id: str | None) -> int:
         if not self._filtered_nodes:
@@ -225,7 +226,8 @@ class TreeSelector(Widget):
         while current_id is not None:
             if current_id in visible:
                 return visible[current_id]
-            current_id = entry_map.get(current_id).parent_id if entry_map.get(current_id) else None
+            entry = entry_map.get(current_id)
+            current_id = entry.parent_id if entry else None
         return len(self._filtered_nodes) - 1
 
     def _should_show_entry(self, entry: SessionEntry) -> bool:
@@ -339,7 +341,10 @@ class TreeSelector(Widget):
             entry = flat.node.entry
             selected = index == self._selected_index
             line = Text(" ")
-            line.append("❯", style=colors.accent) if selected else line.append(" ")
+            if selected:
+                line.append("❯", style=colors.accent)  # noqa: RUF001
+            else:
+                line.append(" ")
             display_indent = max(0, flat.indent - 1) if self._multiple_roots else flat.indent
             connector = (
                 "└─ "
