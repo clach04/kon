@@ -437,7 +437,7 @@ class InputBox(Vertical):
             if getattr(self.app, "_selection_mode", None) == "tree":
                 selector = self.app.query_one("#tree-selector")
                 if hasattr(selector, "action_cancel"):
-                    selector.action_cancel()
+                    selector.action_cancel()  # pyright: ignore[reportAttributeAccessIssue]
                 return
             self._is_completing = False
             self._active_provider = None

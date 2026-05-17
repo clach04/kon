@@ -95,7 +95,7 @@ class _StreamingMarkdownMixin:
         if self._stream_update_pending:
             return
         self._stream_update_pending = True
-        self.call_after_refresh(self._flush_streaming_update)
+        self.call_after_refresh(self._flush_streaming_update)  # pyright: ignore[reportAttributeAccessIssue]
 
     def _flush_streaming_update(self) -> None:
         self._stream_update_pending = False

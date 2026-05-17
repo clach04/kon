@@ -612,7 +612,7 @@ class CommandsMixin:
         selector.show(
             tree,
             self._runtime.session.leaf_id,
-            getattr(self, "size", None).height if getattr(self, "size", None) else 24,
+            getattr(self, "size", None).height if getattr(self, "size", None) else 24,  # pyright: ignore[reportOptionalMemberAccess]
         )
         self._selection_mode = SelectionMode.TREE
 
