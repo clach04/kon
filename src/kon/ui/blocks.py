@@ -485,13 +485,14 @@ class ToolBlock(Static):
             output.add_class("-hidden")
 
     def _render_images(self) -> None:
-        from textual_image.widget import Image as TextualImage
         container = self.query_one("#tool-images", Static)
         container.remove_children()
 
         if not self._images:
             container.add_class("-hidden")
             return
+
+        from textual_image.widget import Image as TextualImage
 
         self.remove_class("-compact")
         self.add_class("-with-details")
