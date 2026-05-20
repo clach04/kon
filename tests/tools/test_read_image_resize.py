@@ -24,8 +24,8 @@ def test_read_image_downsizes_large_images(tmp_path):
     base64_data, mime_type, resize_note = read_and_process_image(str(image_path))
 
     assert mime_type == "image/png"
-    assert _decoded_size(base64_data) == (MAX_DIMENSION, 171)
-    assert resize_note == f"[{MAX_DIMENSION}x171, resized from 2520x842]"
+    assert _decoded_size(base64_data) == (MAX_DIMENSION, 668)
+    assert resize_note == f"[{MAX_DIMENSION}x668, resized from 2520x842]"
 
 
 def test_read_image_keeps_small_images(tmp_path):
