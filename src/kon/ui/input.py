@@ -11,9 +11,9 @@ from textual import events
 from textual._ansi_sequences import ANSI_SEQUENCES_KEYS
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical
+from textual.containers import Horizontal, Vertical
 from textual.message import Message
-from textual.widgets import TextArea
+from textual.widgets import Label, TextArea
 from textual.widgets.text_area import TextAreaTheme
 
 from kon import config
@@ -131,12 +131,22 @@ class InputBox(Vertical):
         height: auto;
         min-height: 3;
         max-height: 30vh;
-        border-top: solid grey;
-        border-bottom: solid grey;
+        border-top: solid transparent;
+        border-bottom: solid transparent;
         border-title-align: left;
         border-subtitle-align: left;
         border-title-color: grey;
         border-subtitle-color: grey;
+    }
+
+    #input-row {
+        height: auto;
+    }
+
+    #input-prefix {
+        width: auto;
+        padding: 0 0 0 1;
+        text-style: bold;
     }
 
     InputBox .input-textarea {
@@ -186,7 +196,9 @@ class InputBox(Vertical):
         self._selected_skill_commands: list[str] = []
 
     def compose(self) -> ComposeResult:
-        yield Kon(self._transform_paste, id="input-textarea", classes="input-textarea")
+        with Horizontal(id="input-row"):
+            yield Label("\u203a", id="input-prefix")
+            yield Kon(self._transform_paste, id="input-textarea", classes="input-textarea")
 
     def on_mount(self) -> None:
         textarea = self.query_one("#input-textarea", TextArea)

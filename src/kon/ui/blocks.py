@@ -526,7 +526,6 @@ class UserBlock(Static):
             text.append(self._content)
             stylize_badge_markers(text, [f"[{self._highlighted_skill}]", "[query]"])
         else:
-            text.append("> ", style="bold")
             text.append(self._content)
 
         yield Label(text)

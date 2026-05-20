@@ -17,6 +17,10 @@ def _blend_hex(base: str, overlay: str, overlay_weight: float) -> str:
 def get_styles() -> str:
     colors = config.ui.colors
     approval_bg = _blend_hex(colors.bg, colors.accent, overlay_weight=0.05)
+    shell_bg = _blend_hex(colors.panel_user, colors.success, overlay_weight=0.15)
+    thinking_medium_bg = _blend_hex(colors.panel_user, colors.accent, overlay_weight=0.08)
+    thinking_high_bg = _blend_hex(colors.panel_user, colors.accent, overlay_weight=0.18)
+    thinking_xhigh_bg = _blend_hex(colors.panel_user, colors.badge.label, overlay_weight=0.18)
 
     return f"""
 Screen {{
@@ -240,37 +244,48 @@ Screen {{
 
 /* Input area */
 #input-box {{
-    border-top: solid {colors.border};
-    border-bottom: solid {colors.border};
+    background: {colors.panel_user};
+    border-top: solid {colors.panel_user};
+    border-bottom: solid {colors.panel_user};
     border-title-color: {colors.dim};
     border-subtitle-color: {colors.dim};
+}}
+
+#input-prefix {{
+    color: {colors.fg};
+    text-style: bold;
 }}
 
 #input-box.-thinking-none,
 #input-box.-thinking-minimal,
 #input-box.-thinking-low {{
-    border-top: solid {colors.border};
-    border-bottom: solid {colors.border};
+    background: {colors.panel_user};
+    border-top: solid {colors.panel_user};
+    border-bottom: solid {colors.panel_user};
 }}
 
 #input-box.-thinking-medium {{
-    border-top: solid {colors.dim};
-    border-bottom: solid {colors.dim};
+    background: {thinking_medium_bg};
+    border-top: solid {thinking_medium_bg};
+    border-bottom: solid {thinking_medium_bg};
 }}
 
 #input-box.-thinking-high {{
-    border-top: solid {colors.accent};
-    border-bottom: solid {colors.accent};
+    background: {thinking_high_bg};
+    border-top: solid {thinking_high_bg};
+    border-bottom: solid {thinking_high_bg};
 }}
 
 #input-box.-thinking-xhigh {{
-    border-top: solid {colors.badge.label};
-    border-bottom: solid {colors.badge.label};
+    background: {thinking_xhigh_bg};
+    border-top: solid {thinking_xhigh_bg};
+    border-bottom: solid {thinking_xhigh_bg};
 }}
 
 #input-box.-shell-command {{
-    border-top: solid {colors.success};
-    border-bottom: solid {colors.success};
+    background: {shell_bg};
+    border-top: solid {shell_bg};
+    border-bottom: solid {shell_bg};
 }}
 
 #input-box.-shell-command .input-textarea {{
