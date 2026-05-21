@@ -159,6 +159,88 @@ def format_markdown(text: str, width: int | None = None) -> Text:
     return Text.from_ansi(rendered.rstrip("\n"))
 
 
+_BASH_TOKEN_RE = re.compile(
+    r"(?P<space>\s+)"
+    r"|(?P<op>\|\||&&|;;|[|;&()<>])"
+    r"|(?P<sq>'[^']*')"
+    r'|(?P<dq>"(?:\\.|[^"\\])*")'
+    r"|(?P<word>[^\s|;&()<>]+)"
+)
+
+
+def _format_bash_command_tokens(command: str) -> Text:
+    """Small shell highlighter for common command headers.
+
+    Pygments mostly highlights shell syntax, not ordinary argv words, so a
+    command like `git status --short && git log` can otherwise appear plain.
+    Use a compact Catppuccin-ish palette similar to Codex's default command
+    highlighting instead of dimming argv text.
+    """
+    syntax = config.ui.colors.syntax_colors
+    command_style = f"{syntax.command} bold"
+    arg_style = syntax.arg
+    option_style = syntax.option
+    operator_style = f"{syntax.operator} bold"
+    string_style = syntax.string
+    variable_style = syntax.variable
+
+    text = Text()
+    expect_command = True
+
+    for match in _BASH_TOKEN_RE.finditer(command):
+        token = match.group(0)
+        kind = match.lastgroup
+
+        if kind == "space":
+            text.append(token)
+            continue
+
+        if kind == "op":
+            text.append(token, style=operator_style)
+            expect_command = token in {"|", "||", "&&", ";", ";;", "("}
+            continue
+
+        if kind in {"sq", "dq"}:
+            text.append(token, style=string_style)
+            expect_command = False
+            continue
+
+        if token.startswith("$"):
+            text.append(token, style=variable_style)
+            expect_command = False
+        elif expect_command:
+            text.append(token, style=command_style)
+            expect_command = False
+        elif token.startswith("-"):
+            text.append(token, style=option_style)
+        else:
+            text.append(token, style=arg_style)
+
+    return text
+
+
+def format_bash_command(text: str, width: int | None = None) -> Text:
+    """Syntax-highlight a bash command for compact tool headers."""
+    if width is None:
+        term_width = shutil.get_terminal_size().columns
+        width = max(40, term_width - 4)
+
+    prompt = ""
+    command = text
+    if text.startswith("$ "):
+        prompt = "$ "
+        command = text[2:]
+
+    highlighted = _format_bash_command_tokens(command)
+
+    if not prompt:
+        return highlighted
+
+    result = Text(prompt, style=config.ui.colors.dim)
+    result.append_text(highlighted)
+    return result
+
+
 def format_tokens(n: int) -> str:
     if n >= 1_000_000:
         return f"{int(n / 1_000_000)}m"

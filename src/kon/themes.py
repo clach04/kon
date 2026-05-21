@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 
 class ToolBgConfig(BaseModel):
@@ -12,6 +12,15 @@ class ToolBgConfig(BaseModel):
 class BadgeColorConfig(BaseModel):
     bg: str
     label: str
+
+
+class SyntaxColorConfig(BaseModel):
+    command: str
+    arg: str
+    option: str
+    operator: str
+    string: str
+    variable: str
 
 
 class ColorsConfig(BaseModel):
@@ -39,6 +48,26 @@ class ColorsConfig(BaseModel):
     panel_alt: str
     panel_user: str
     border: str
+    syntax: SyntaxColorConfig | None = None
+
+    @property
+    def syntax_colors(self) -> SyntaxColorConfig:
+        if self.syntax is not None:
+            return self.syntax
+        return SyntaxColorConfig(
+            command=self.title,
+            arg=self.fg,
+            option=self.accent,
+            operator=self.notice,
+            string=self.selected,
+            variable=self.markdown_code,
+        )
+
+    @model_validator(mode="after")
+    def _default_syntax_colors(self) -> ColorsConfig:
+        if self.syntax is None:
+            self.syntax = self.syntax_colors
+        return self
 
 
 class ThemeConfig(BaseModel):
@@ -75,6 +104,36 @@ _THEMES: dict[str, ThemeConfig] = {
             panel="#3c3836",
             panel_alt="#32302f",
             panel_user="#504945",
+            border="#504945",
+        ),
+    ),
+    "gruvbox-dark-hard": ThemeConfig(
+        id="gruvbox-dark-hard",
+        label="Gruvbox Dark Hard",
+        colors=ColorsConfig(
+            bg="#1d2021",
+            fg="#ebdbb2",
+            dim="#665c54",
+            muted="#a89984",
+            title="#fabd2f",
+            spinner="#83a598",
+            accent="#83a598",
+            info="#fabd2f",
+            markdown_heading="#fabd2f",
+            markdown_code="#8ec07c",
+            selected="#8ec07c",
+            error="#fb4934",
+            notice="#fe8019",
+            diff_added="#b8bb26",
+            diff_removed="#fb4934",
+            tool_bg=ToolBgConfig(pending="#282828", success="#32302f", error="#3c2f2f"),
+            badge=BadgeColorConfig(bg="#282828", label="#d3869b"),
+            running="#458588",
+            success="#98971a",
+            failed="#cc241d",
+            panel="#282828",
+            panel_alt="#32302f",
+            panel_user="#3c3836",
             border="#504945",
         ),
     ),
@@ -800,6 +859,217 @@ _THEMES: dict[str, ThemeConfig] = {
     ),
 }
 
+_SYNTAX_COLORS: dict[str, SyntaxColorConfig] = {
+    "gruvbox-dark": SyntaxColorConfig(
+        command="#fabd2f",
+        arg="#ebdbb2",
+        option="#83a598",
+        operator="#fe8019",
+        string="#b8bb26",
+        variable="#d3869b",
+    ),
+    "gruvbox-dark-hard": SyntaxColorConfig(
+        command="#fabd2f",
+        arg="#ebdbb2",
+        option="#83a598",
+        operator="#fe8019",
+        string="#b8bb26",
+        variable="#d3869b",
+    ),
+    "gruvbox-light": SyntaxColorConfig(
+        command="#b57614",
+        arg="#3c3836",
+        option="#076678",
+        operator="#af3a03",
+        string="#79740e",
+        variable="#8f3f71",
+    ),
+    "catppuccin-mocha": SyntaxColorConfig(
+        command="#f9e2af",
+        arg="#cdd6f4",
+        option="#89b4fa",
+        operator="#fab387",
+        string="#a6e3a1",
+        variable="#cba6f7",
+    ),
+    "catppuccin-latte": SyntaxColorConfig(
+        command="#df8e1d",
+        arg="#4c4f69",
+        option="#1e66f5",
+        operator="#fe640b",
+        string="#40a02b",
+        variable="#8839ef",
+    ),
+    "catppuccin-frappe": SyntaxColorConfig(
+        command="#e5c890",
+        arg="#c6d0f5",
+        option="#8caaee",
+        operator="#ef9f76",
+        string="#a6d189",
+        variable="#ca9ee6",
+    ),
+    "catppuccin-macchiato": SyntaxColorConfig(
+        command="#eed49f",
+        arg="#cad3f5",
+        option="#8aadf4",
+        operator="#f5a97f",
+        string="#a6da95",
+        variable="#c6a0f6",
+    ),
+    "dracula": SyntaxColorConfig(
+        command="#f1fa8c",
+        arg="#f8f8f2",
+        option="#8be9fd",
+        operator="#ffb86c",
+        string="#50fa7b",
+        variable="#bd93f9",
+    ),
+    "everforest": SyntaxColorConfig(
+        command="#dbbc7f",
+        arg="#d3c6aa",
+        option="#7fbbb3",
+        operator="#e69875",
+        string="#a7c080",
+        variable="#d699b6",
+    ),
+    "flexoki": SyntaxColorConfig(
+        command="#D0A215",
+        arg="#CECDC3",
+        option="#4385BE",
+        operator="#DA702C",
+        string="#879A39",
+        variable="#8B7EC8",
+    ),
+    "github-dark": SyntaxColorConfig(
+        command="#d29922",
+        arg="#c9d1d9",
+        option="#58a6ff",
+        operator="#db6d28",
+        string="#7ee787",
+        variable="#bc8cff",
+    ),
+    "github-light": SyntaxColorConfig(
+        command="#9a6700",
+        arg="#1f2328",
+        option="#0969da",
+        operator="#bc4c00",
+        string="#1a7f37",
+        variable="#8250df",
+    ),
+    "tokyo-night": SyntaxColorConfig(
+        command="#e0af68",
+        arg="#c0caf5",
+        option="#7aa2f7",
+        operator="#ff9e64",
+        string="#9ece6a",
+        variable="#bb9af7",
+    ),
+    "tokyo-day": SyntaxColorConfig(
+        command="#8c6c3e",
+        arg="#3760bf",
+        option="#2e7de9",
+        operator="#b15c00",
+        string="#587539",
+        variable="#7847bd",
+    ),
+    "kanagawa": SyntaxColorConfig(
+        command="#DCA561",
+        arg="#DCD7BA",
+        option="#7E9CD8",
+        operator="#FFA066",
+        string="#98BB6C",
+        variable="#957FB8",
+    ),
+    "kanagawa-dragon": SyntaxColorConfig(
+        command="#c4b28a",
+        arg="#c5c9c5",
+        option="#8ba4b0",
+        operator="#FF9E3B",
+        string="#8a9a7b",
+        variable="#a292a3",
+    ),
+    "one-dark": SyntaxColorConfig(
+        command="#e5c07b",
+        arg="#abb2bf",
+        option="#61afef",
+        operator="#d19a66",
+        string="#98c379",
+        variable="#c678dd",
+    ),
+    "one-light": SyntaxColorConfig(
+        command="#c18401",
+        arg="#383a42",
+        option="#4078f2",
+        operator="#986801",
+        string="#50a14f",
+        variable="#a626a4",
+    ),
+    "nord": SyntaxColorConfig(
+        command="#ebcb8b",
+        arg="#d8dee9",
+        option="#81a1c1",
+        operator="#d08770",
+        string="#a3be8c",
+        variable="#b48ead",
+    ),
+    "nightowl": SyntaxColorConfig(
+        command="#ecc48d",
+        arg="#d6deeb",
+        option="#82AAFF",
+        operator="#F78C6C",
+        string="#c5e478",
+        variable="#c792ea",
+    ),
+    "monokai": SyntaxColorConfig(
+        command="#e6db74",
+        arg="#f8f8f2",
+        option="#66d9ef",
+        operator="#fd971f",
+        string="#a6e22e",
+        variable="#ae81ff",
+    ),
+    "solarized-dark": SyntaxColorConfig(
+        command="#b58900",
+        arg="#93a1a1",
+        option="#268bd2",
+        operator="#cb4b16",
+        string="#859900",
+        variable="#6c71c4",
+    ),
+    "solarized-light": SyntaxColorConfig(
+        command="#b58900",
+        arg="#586e75",
+        option="#268bd2",
+        operator="#cb4b16",
+        string="#859900",
+        variable="#6c71c4",
+    ),
+    "ayu": SyntaxColorConfig(
+        command="#E6B450",
+        arg="#BFBDB6",
+        option="#59C2FF",
+        operator="#FF8F40",
+        string="#AAD94C",
+        variable="#D2A6FF",
+    ),
+    "palenight": SyntaxColorConfig(
+        command="#ffcb6b",
+        arg="#a6accd",
+        option="#82aaff",
+        operator="#f78c6c",
+        string="#c3e88d",
+        variable="#c792ea",
+    ),
+    "rosepine": SyntaxColorConfig(
+        command="#f6c177",
+        arg="#e0def4",
+        option="#9ccfd8",
+        operator="#ebbcba",
+        string="#31748f",
+        variable="#c4a7e7",
+    ),
+}
+
 THEME_ORDER = [
     "ayu",
     "catppuccin-frappe",
@@ -812,6 +1082,7 @@ THEME_ORDER = [
     "github-dark",
     "github-light",
     "gruvbox-dark",
+    "gruvbox-dark-hard",
     "gruvbox-light",
     "kanagawa",
     "kanagawa-dragon",
@@ -841,4 +1112,6 @@ def get_theme(theme_id: str) -> ThemeConfig:
     theme = _THEMES.get(theme_id)
     if theme is None:
         raise ValueError(f"Unknown theme: {theme_id}")
-    return theme.model_copy(deep=True)
+    result = theme.model_copy(deep=True)
+    result.colors.syntax = _SYNTAX_COLORS[theme_id].model_copy(deep=True)
+    return result

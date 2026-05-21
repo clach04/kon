@@ -13,7 +13,7 @@ from kon import config
 from kon.core.types import ImageContent
 from kon.permissions import ApprovalResponse
 
-from .formatting import format_markdown, strip_markdown_for_collapsed_text
+from .formatting import format_bash_command, format_markdown, strip_markdown_for_collapsed_text
 
 _UPDATE_COMMAND = "uv tool upgrade kon-coding-agent"
 
@@ -329,6 +329,9 @@ class ToolBlock(Static):
                 content = self._call_msg
         else:
             content = self._call_msg
+
+        if self._name == "bash":
+            return format_bash_command(content)
 
         rendered = self._render_markup_safe(content)
         return Text(rendered.plain, style=config.ui.colors.dim)
