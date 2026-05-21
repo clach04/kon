@@ -82,6 +82,7 @@ class FloatingList[T](Widget):
         super().__init__(id=id, classes=classes)
         self._window_size = window_size
         self._min_label_width = label_width
+        self._default_max_label_width = max_label_width
         self._max_label_width = max_label_width
         self._label_width = label_width
         self._items: list[ListItem[T]] = []
@@ -162,8 +163,9 @@ class FloatingList[T](Widget):
         self._all_items = items if searchable else []
         self._items = items
         self._selected_index = 0
-        if max_label_width is not None:
-            self._max_label_width = max_label_width
+        self._max_label_width = (
+            max_label_width if max_label_width is not None else self._default_max_label_width
+        )
         self._description_width = self._compute_description_width()
         self._label_width = self._compute_label_width()
         self._visible = True

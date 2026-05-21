@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
 from kon import (
     config,
@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 
 
 Choice = TypeVar("Choice", bound=str)
+SettingsSelectionResult = Literal["reopened-picker", "closed"]
 
 
 class CommandsMixin:
@@ -71,6 +72,16 @@ class CommandsMixin:
         def _render_session_entries(self, session: Session) -> None: ...
         def _apply_theme(self, theme_id: str) -> None: ...
         def _apply_thinking_level_style(self, level: str) -> None: ...
+        def _show_completion_list(
+            self,
+            items: list[ListItem],
+            *,
+            searchable: bool = False,
+            max_label_width: int | None = None,
+        ) -> None: ...
+        def _hide_completion_list(self, *, restore_info_bar: bool = True) -> None: ...
+        def _is_chat_at_bottom(self) -> bool: ...
+        def _restore_chat_scroll_after_refresh(self, was_at_bottom: bool) -> None: ...
 
     def _handle_command(self, text: str) -> bool:
         parts = text[1:].split(maxsplit=1)
@@ -159,21 +170,20 @@ class CommandsMixin:
         searchable: bool = True,
         max_label_width: int | None = None,
     ) -> None:
-        completion_list = self.query_one("#completion-list", FloatingList)
         input_box = self.query_one("#input-box", InputBox)
+        was_at_bottom = self._is_chat_at_bottom()
 
         with self.batch_update():  # type: ignore[attr-defined]
-            if max_label_width is None:
-                completion_list.show(items, searchable=searchable)
-            else:
-                completion_list.show(items, searchable=searchable, max_label_width=max_label_width)
-
+            self._show_completion_list(
+                items, searchable=searchable, max_label_width=max_label_width
+            )
             input_box.clear()
             input_box.set_autocomplete_enabled(False)
             input_box.set_completing(True)
             input_box.focus()
 
         self._selection_mode = selection_mode
+        self._restore_chat_scroll_after_refresh(was_at_bottom)
 
     def _build_choice_items(
         self, choices: Sequence[Choice], current: Choice, descriptions: Mapping[Choice, str]
@@ -374,7 +384,7 @@ class CommandsMixin:
     def _handle_settings_command(self) -> None:
         self._show_settings_picker()
 
-    def _handle_settings_select(self, item_value: str) -> None:
+    def _handle_settings_select(self, item_value: str) -> SettingsSelectionResult:
         if item_value == "notifications":
             current_enabled = config.notifications.enabled
             set_notifications_enabled(not current_enabled)
@@ -382,6 +392,7 @@ class CommandsMixin:
             chat = self.query_one("#chat-log", ChatLog)
             chat.show_status(f"Notifications turned {mode}")
             self._show_settings_picker(selected_value=item_value)
+            return "reopened-picker"
 
         elif item_value == "show-shortcuts":
             shortcuts_current = config.ui.show_welcome_shortcuts
@@ -390,6 +401,7 @@ class CommandsMixin:
             chat = self.query_one("#chat-log", ChatLog)
             chat.show_status(f"Welcome shortcuts turned {mode}")
             self._show_settings_picker(selected_value=item_value)
+            return "reopened-picker"
 
         elif item_value == "permissions":
             current: PermissionMode = config.permissions.mode
@@ -400,14 +412,22 @@ class CommandsMixin:
             chat = self.query_one("#chat-log", ChatLog)
             chat.show_status(f"Permission mode changed to {new_mode}")
             self._show_settings_picker(selected_value=item_value)
+            return "reopened-picker"
 
         elif item_value == "themes":
             self._settings_active = True
             self._handle_themes_command("")
+            return "reopened-picker"
 
         elif item_value == "thinking":
+            if self._runtime.provider is None:
+                self._handle_thinking_command("")
+                return "closed"
             self._settings_active = True
             self._handle_thinking_command("")
+            return "reopened-picker"
+
+        return "closed"
 
     def _select_theme(self, theme_id: str) -> None:
         set_theme(theme_id)
@@ -675,8 +695,9 @@ class CommandsMixin:
             return
 
         items = self._build_resume_items()
+        was_at_bottom = self._is_chat_at_bottom()
         if not items:
-            completion_list.hide()
+            self._hide_completion_list()
             input_box = self.query_one("#input-box", InputBox)
             input_box.set_autocomplete_enabled(True)
             input_box.set_completing(False)
@@ -687,10 +708,11 @@ class CommandsMixin:
                 timeout=2,
                 severity="information",
             )
-            return
+        else:
+            completion_list.update_items(items)
+            self.notify("Session deleted", title="Sessions", timeout=2, severity="information")
 
-        completion_list.update_items(items)
-        self.notify("Session deleted", title="Sessions", timeout=2, severity="information")
+        self._restore_chat_scroll_after_refresh(was_at_bottom)
 
     def _handle_login_command(self, args: str) -> None:
         providers = [

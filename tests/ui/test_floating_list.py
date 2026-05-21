@@ -5,6 +5,23 @@ def _make_items(count: int) -> list[ListItem[str]]:
     return [ListItem(value=f"v{i}", label=f"item{i}") for i in range(count)]
 
 
+def test_show_resets_max_label_width_to_constructor_default() -> None:
+    label = "x" * 35
+    items = [ListItem(value="value", label=label)]
+    floating_list: FloatingList[str] = FloatingList()
+
+    floating_list.show(items, max_label_width=40)
+    wide_render = floating_list.render().plain
+
+    floating_list.show(items)
+    default_render = floating_list.render().plain
+
+    assert label in wide_render
+    assert label not in default_render
+    assert "…" in default_render
+    assert default_render != wide_render
+
+
 def test_move_down_wraps_to_first_item() -> None:
     floating_list: FloatingList[str] = FloatingList()
     floating_list.update_items(_make_items(3))

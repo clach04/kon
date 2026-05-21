@@ -34,7 +34,9 @@ class FakeFloatingList:
         self.items: list[ListItem] = []
         self.searchable: bool | None = None
 
-    def show(self, items: list[ListItem], searchable: bool = False) -> None:
+    def show(
+        self, items: list[ListItem], searchable: bool = False, max_label_width: int | None = None
+    ) -> None:
         self.items = items
         self.searchable = searchable
 
@@ -119,6 +121,21 @@ class FakeCommands(CommandsMixin):
         self._provider = self._runtime.provider
         self._session = self._runtime.session
         self._thinking_level = self._runtime.thinking_level
+
+    def _show_completion_list(
+        self,
+        items: list[ListItem],
+        *,
+        searchable: bool = False,
+        max_label_width: int | None = None,
+    ) -> None:
+        self.completion_list.show(items, searchable=searchable, max_label_width=max_label_width)
+
+    def _is_chat_at_bottom(self) -> bool:
+        return True
+
+    def _restore_chat_scroll_after_refresh(self, was_at_bottom: bool) -> None:
+        pass
 
 
 def test_thinking_command_with_argument_updates_current_session_only():

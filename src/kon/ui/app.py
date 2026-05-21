@@ -60,7 +60,7 @@ from .autocomplete import DEFAULT_COMMANDS, FilePathProvider, SlashCommand, Slas
 from .blocks import HandoffLinkBlock, LaunchWarning
 from .chat import ChatLog
 from .commands import CommandsMixin
-from .floating_list import FloatingList
+from .floating_list import FloatingList, ListItem
 from .input import InputBox
 from .selection_mode import SelectionMode
 from .session_ui import SessionUIMixin
@@ -214,7 +214,7 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
         yield QueueDisplay(id="queue-display")
         yield StatusLine(id="status-line")
         yield InputBox(cwd=self._cwd, id="input-box")
-        yield FloatingList(window_size=8, label_width=12, id="completion-list")
+        yield FloatingList(window_size=10, label_width=12, id="completion-list")
         yield TreeSelector(id="tree-selector")
         yield InfoBar(
             cwd=self._cwd,
@@ -504,6 +504,33 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
             chat = self.query_one("#chat-log", ChatLog)
             chat.scroll_end(animate=False)
 
+    def _restore_chat_scroll_after_refresh(self, was_at_bottom: bool) -> None:
+        self.call_after_refresh(lambda: self._restore_chat_scroll_if_needed(was_at_bottom))
+
+    def _set_bottom_info_displaced(self, displaced: bool) -> None:
+        info_bar = self.query_one("#info-bar", InfoBar)
+        if displaced:
+            info_bar.add_class("-completion-hidden")
+        else:
+            info_bar.remove_class("-completion-hidden")
+
+    def _show_completion_list(
+        self,
+        items: list[ListItem],
+        *,
+        searchable: bool = False,
+        max_label_width: int | None = None,
+    ) -> None:
+        completion_list = self.query_one("#completion-list", FloatingList)
+        self._set_bottom_info_displaced(True)
+        completion_list.show(items, searchable=searchable, max_label_width=max_label_width)
+
+    def _hide_completion_list(self, *, restore_info_bar: bool = True) -> None:
+        completion_list = self.query_one("#completion-list", FloatingList)
+        completion_list.hide()
+        if restore_info_bar:
+            self._set_bottom_info_displaced(False)
+
     @on(InputBox.CompletionUpdate)
     def on_completion_update(self, event: InputBox.CompletionUpdate) -> None:
         if self._selection_mode is not None:
@@ -512,35 +539,38 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
         completion_list = self.query_one("#completion-list", FloatingList)
         was_at_bottom = self._is_chat_at_bottom()
         if completion_list.is_visible:
+            self._set_bottom_info_displaced(True)
             completion_list.update_items(event.items)
         else:
-            completion_list.show(event.items)
-        self.call_after_refresh(lambda: self._restore_chat_scroll_if_needed(was_at_bottom))
+            self._show_completion_list(event.items)
+        self._restore_chat_scroll_after_refresh(was_at_bottom)
 
     @on(InputBox.CompletionHide)
     def on_completion_hide(self, event: InputBox.CompletionHide) -> None:
-        completion_list = self.query_one("#completion-list", FloatingList)
         input_box = self.query_one("#input-box", InputBox)
         was_at_bottom = self._is_chat_at_bottom()
 
         with self.batch_update():
-            completion_list.hide()
-
             if self._selection_mode is not None:
                 # If we were in a sub-picker from settings, go back to settings
                 if self._settings_active:
+                    self._hide_completion_list(restore_info_bar=False)
                     self._settings_active = False
                     self._show_settings_picker()
+                    self._restore_chat_scroll_after_refresh(was_at_bottom)
                     return
 
+                self._hide_completion_list()
                 self._selection_mode = None
                 input_box.clear()
                 input_box.set_autocomplete_enabled(True)
                 self._reset_ctrl_d_delete_state()
+            else:
+                self._hide_completion_list()
 
             input_box.set_completing(False)
 
-        self.call_after_refresh(lambda: self._restore_chat_scroll_if_needed(was_at_bottom))
+        self._restore_chat_scroll_after_refresh(was_at_bottom)
 
     @on(InputBox.CompletionSelect)
     def on_completion_select(self, event: InputBox.CompletionSelect) -> None:
@@ -548,28 +578,40 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
         if self._selection_mode == SelectionMode.TREE:
             self.query_one("#tree-selector", TreeSelector).action_select()
             return
+        was_at_bottom = self._is_chat_at_bottom()
         completion_list = self.query_one("#completion-list", FloatingList)
         item = completion_list.selected_item
 
         if not item:
-            completion_list.hide()
+            self._hide_completion_list()
             input_box.set_completing(False)
             input_box.submit_raw()
+            self._restore_chat_scroll_after_refresh(was_at_bottom)
             return
 
         if self._selection_mode is not None:
             selection_mode = self._selection_mode
+            keeps_info_bar_displaced = selection_mode == SelectionMode.SETTINGS or (
+                selection_mode in (SelectionMode.THEME, SelectionMode.THINKING)
+                and self._settings_active
+            )
             with self.batch_update():
-                completion_list.hide()
+                self._hide_completion_list(restore_info_bar=not keeps_info_bar_displaced)
                 self._selection_mode = None
                 input_box.clear()
                 input_box.set_autocomplete_enabled(True)
                 input_box.set_completing(False)
                 self._reset_ctrl_d_delete_state()
 
+            def show_settings_picker_and_restore() -> None:
+                self._show_settings_picker()
+                self._restore_chat_scroll_after_refresh(was_at_bottom)
+
             match selection_mode:
                 case SelectionMode.SETTINGS:
-                    self._handle_settings_select(item.value)
+                    settings_result = self._handle_settings_select(item.value)
+                    if settings_result == "closed":
+                        self._set_bottom_info_displaced(False)
                 case SelectionMode.SESSION:
                     self.run_worker(self._load_session(item.value.path), exclusive=True)
                 case SelectionMode.TREE:
@@ -580,14 +622,16 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
                     self._select_theme(item.value)
                     if self._settings_active:
                         self._settings_active = False
-                        self.call_later(self._show_settings_picker)
+                        self.call_later(show_settings_picker_and_restore)
+                        return
                 case SelectionMode.PERMISSIONS:
                     self._select_permission_mode(item.value)
                 case SelectionMode.THINKING:
                     self._select_thinking_level(item.value)
                     if self._settings_active:
                         self._settings_active = False
-                        self.call_later(self._show_settings_picker)
+                        self.call_later(show_settings_picker_and_restore)
+                        return
                 case SelectionMode.NOTIFICATIONS:
                     self._select_notifications_mode(item.value)
                 case SelectionMode.LOGIN:
@@ -595,15 +639,17 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
                 case SelectionMode.LOGOUT:
                     self._select_logout_provider(item.value)
 
+            self._restore_chat_scroll_after_refresh(was_at_bottom)
             return
 
         if input_box.is_tab_completing:
-            completion_list.hide()
+            self._hide_completion_list()
             input_box.apply_tab_path_completion(item)
+            self._restore_chat_scroll_after_refresh(was_at_bottom)
             return
 
         provider = input_box.active_provider
-        completion_list.hide()
+        self._hide_completion_list()
 
         if isinstance(provider, SlashCommandProvider):
             input_box.apply_slash_command(item)
@@ -611,6 +657,7 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
             input_box.apply_file_completion(item)
 
         input_box.set_completing(False)
+        self._restore_chat_scroll_after_refresh(was_at_bottom)
 
     @on(InputBox.SearchUpdate)
     def on_search_update(self, event: InputBox.SearchUpdate) -> None:

@@ -288,6 +288,11 @@ Screen {{
     color: {colors.dim};
 }}
 
+.info-bar.-completion-hidden {{
+    display: none;
+    height: 0;
+}}
+
 #info-row-1, #info-row-2 {{
     height: 1;
 }}
