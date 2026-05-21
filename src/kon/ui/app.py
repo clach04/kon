@@ -214,7 +214,7 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
         yield QueueDisplay(id="queue-display")
         yield StatusLine(id="status-line")
         yield InputBox(cwd=self._cwd, id="input-box")
-        yield FloatingList(window_size=10, label_width=12, id="completion-list")
+        yield FloatingList(window_size=10, label_width=6, id="completion-list")
         yield TreeSelector(id="tree-selector")
         yield InfoBar(
             cwd=self._cwd,

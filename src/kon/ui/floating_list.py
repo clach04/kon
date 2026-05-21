@@ -74,7 +74,7 @@ class FloatingList[T](Widget):
     def __init__(
         self,
         window_size: int = 5,
-        label_width: int = 12,
+        label_width: int = 6,
         max_label_width: int = 30,
         id: str | None = None,
         classes: str | None = None,
@@ -120,6 +120,14 @@ class FloatingList[T](Widget):
             return self._all_items
         return self._items
 
+    def _compute_label_width(self) -> int:
+        source = self._get_source_items()
+        if not source:
+            return self._min_label_width
+
+        max_len = max(len(item.label) for item in source)
+        return max(self._min_label_width, min(max_len, self._max_label_width))
+
     def _compute_description_width(self) -> int:
         source = self._get_source_items()
         if not source:
@@ -132,25 +140,10 @@ class FloatingList[T](Widget):
         if available_width == 0:
             return min(max_desc_len, 20)
 
-        # Reserve space for arrow, inter-column gap, and minimum label width.
-        max_desc_width = max(0, available_width - 2 - 4 - self._min_label_width - 1)
+        # Reserve space for arrow (2), gap between cols (3), label width, and margin (1)
+        reserved = 2 + 3 + self._label_width + 1
+        max_desc_width = max(0, available_width - reserved)
         return min(max_desc_len, max_desc_width)
-
-    def _compute_label_width(self) -> int:
-        source = self._get_source_items()
-        if not source:
-            return self._min_label_width
-
-        available_width = max(0, self.size.width - 4) if self.size.width else 0
-        dynamic_max_width = self._max_label_width
-        if available_width > 0:
-            desc_width = self._compute_description_width()
-            reserved = 2 + 4 + (1 + desc_width if desc_width > 0 else 0)
-            dynamic_max_width = max(self._min_label_width, available_width - reserved)
-            dynamic_max_width = min(dynamic_max_width, self._max_label_width)
-
-        max_len = max(len(item.label) for item in source)
-        return max(self._min_label_width, min(max_len, dynamic_max_width))
 
     def show(
         self,
@@ -166,8 +159,8 @@ class FloatingList[T](Widget):
         self._max_label_width = (
             max_label_width if max_label_width is not None else self._default_max_label_width
         )
-        self._description_width = self._compute_description_width()
         self._label_width = self._compute_label_width()
+        self._description_width = self._compute_description_width()
         self._visible = True
         self._render_key += 1
 
@@ -187,8 +180,8 @@ class FloatingList[T](Widget):
             self._items = self._all_items
         else:
             self._items = self._fuzzy_filter(query, self._all_items)
-        self._description_width = self._compute_description_width()
         self._label_width = self._compute_label_width()
+        self._description_width = self._compute_description_width()
         self._selected_index = 0
         self._render_key += 1
 
@@ -196,8 +189,8 @@ class FloatingList[T](Widget):
         self._items = items
         if self._search_enabled:
             self._all_items = items
-        self._description_width = self._compute_description_width()
         self._label_width = self._compute_label_width()
+        self._description_width = self._compute_description_width()
         # Clamp selected index
         if self._selected_index >= len(items):
             self._selected_index = max(0, len(items) - 1)
@@ -285,8 +278,8 @@ class FloatingList[T](Widget):
         del event
         if not self._visible:
             return
-        self._description_width = self._compute_description_width()
         self._label_width = self._compute_label_width()
+        self._description_width = self._compute_description_width()
         self._render_key += 1
 
     def _render_row(self, item: ListItem[T], is_selected: bool) -> Text:
@@ -314,7 +307,7 @@ class FloatingList[T](Widget):
             label = raw_label[: effective_label_width - 1] + "…"
         else:
             label = raw_label
-        label = label.ljust(effective_label_width + 2)
+        label = label.ljust(effective_label_width + 3)
         if is_selected:
             text.append(label, style=f"bold {selected_color}")
         else:
@@ -328,7 +321,6 @@ class FloatingList[T](Widget):
                     description = "…"
                 else:
                     description = description[: self._description_width - 1] + "…"
-            text.append(" ")
             text.append(description, style=f"bold {selected_color}" if is_selected else dim_color)
 
         return text
