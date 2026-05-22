@@ -2,14 +2,15 @@
 AGENTS.md discovery and loading.
 
 Discovers AGENTS.md (or CLAUDE.md) files from:
-1. Global config dir (~/.kon/)
-2. Ancestor directories from cwd up to git root or home directory (closest last)
+1. Global agents dir (~/.agents/)
+2. Ancestor .agents directories from cwd up to git root or home directory (closest last)
+3. Root-level AGENTS.md/CLAUDE.md files for compatibility
 """
 
 from dataclasses import dataclass
 from pathlib import Path
 
-from .. import get_config_dir
+from .. import get_agents_dir as get_config_dir
 from ._xml import escape_xml
 
 CONTEXT_FILE_CANDIDATES = ["AGENTS.md", "CLAUDE.md"]
@@ -62,8 +63,8 @@ def load_agent_mds(cwd: str | None = None) -> list[ContextFile]:
     Load all AGENTS.md files from config dir and ancestor directories.
 
     Discovery order:
-    1. Global config dir (~/.kon/) - loaded first
-    2. Ancestor directories from stop dir down to cwd - closest to cwd loaded last
+    1. Global agents dir (~/.agents/) - loaded first
+    2. Ancestor .agents/root directories from stop dir down to cwd - closest to cwd loaded last
 
     Stop directory is determined by:
     - Git root (if cwd is inside a git repository)
@@ -77,10 +78,10 @@ def load_agent_mds(cwd: str | None = None) -> list[ContextFile]:
     context_files: list[ContextFile] = []
     seen_paths: set[str] = set()
 
-    # 1. Load from global config dir
-    config_dir = get_config_dir()
-    if config_dir.exists():
-        global_context = _load_context_from_dir(config_dir)
+    # 1. Load from global agents dir
+    agents_dir = get_config_dir()
+    if agents_dir.exists():
+        global_context = _load_context_from_dir(agents_dir)
         if global_context:
             context_files.append(global_context)
             seen_paths.add(global_context.path)
@@ -93,10 +94,11 @@ def load_agent_mds(cwd: str | None = None) -> list[ContextFile]:
     current = resolved_cwd
 
     while True:
-        context_file = _load_context_from_dir(current)
-        if context_file and context_file.path not in seen_paths:
-            ancestor_files.insert(0, context_file)
-            seen_paths.add(context_file.path)
+        for candidate_dir in (current / ".agents", current):
+            context_file = _load_context_from_dir(candidate_dir)
+            if context_file and context_file.path not in seen_paths:
+                ancestor_files.insert(0, context_file)
+                seen_paths.add(context_file.path)
         if current == stop_dir:
             break
         current = current.parent

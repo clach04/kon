@@ -5,8 +5,9 @@ Skills are directories containing a SKILL.md file with frontmatter.
 They provide specialized instructions that the model can read on-demand.
 
 Discovery locations:
-1. Global: ~/.kon/skills/
-2. Project: <cwd>/.kon/skills/
+1. User: ~/.agents/skills/
+2. Project: <cwd-or-ancestor>/.agents/skills/
+3. Legacy project fallback: <cwd>/.kon/skills/ with warnings
 """
 
 import os
@@ -16,7 +17,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
-from .. import CONFIG_DIR_NAME, get_config_dir
+from .. import get_agents_dir as get_config_dir, get_legacy_config_dir
 from ._xml import escape_xml
 
 MAX_NAME_LENGTH = 64
@@ -165,12 +166,15 @@ def _load_skill_from_dir(skill_dir: Path) -> tuple[Skill | None, list[SkillWarni
         return None, [SkillWarning(file_path, str(e))]
 
 
-def _load_skills_from_dir(directory: Path) -> LoadSkillsResult:
+def _load_skills_from_dir(directory: Path, *, legacy_warning: str | None = None) -> LoadSkillsResult:
     skills: list[Skill] = []
     warnings: list[SkillWarning] = []
 
     if not directory.exists():
         return LoadSkillsResult(skills=skills, warnings=warnings)
+
+    if legacy_warning:
+        warnings.append(SkillWarning(str(directory), legacy_warning))
 
     try:
         for entry in directory.iterdir():
@@ -190,13 +194,38 @@ def _load_skills_from_dir(directory: Path) -> LoadSkillsResult:
     return LoadSkillsResult(skills=skills, warnings=warnings)
 
 
+def _find_git_root(start: Path) -> Path | None:
+    current = start
+    while True:
+        if (current / ".git").is_dir():
+            return current
+        parent = current.parent
+        if parent == current:
+            return None
+        current = parent
+
+
+def _project_skill_dirs(cwd: Path) -> list[Path]:
+    git_root = _find_git_root(cwd)
+    stop_dir = git_root or cwd
+    dirs: list[Path] = []
+    current = cwd
+    while True:
+        dirs.append((current / ".agents" / "skills").resolve(strict=False))
+        if current == stop_dir:
+            break
+        current = current.parent
+    return dirs
+
+
 def load_skills(cwd: str | None = None) -> LoadSkillsResult:
     """
-    Load skills from global and project locations.
+    Load skills from ~/.agents and project .agents locations.
 
     Discovery:
-    1. <cwd>/.kon/skills/ - each subdirectory with SKILL.md is a skill
-    2. ~/.kon/skills/ - each subdirectory with SKILL.md is a skill
+    1. <cwd-or-ancestor>/.agents/skills/ - each subdirectory with SKILL.md is a skill
+    2. ~/.agents/skills/ - each subdirectory with SKILL.md is a skill
+    3. Legacy <cwd>/.kon/skills/ and ~/.kon/skills/ fallback with deprecation warnings
 
     Local skills take precedence over global skills with the same name.
     """
@@ -220,12 +249,35 @@ def load_skills(cwd: str | None = None) -> LoadSkillsResult:
             else:
                 skill_map[skill.name] = skill
 
-    local_skills_dir = (resolved_cwd / CONFIG_DIR_NAME / "skills").resolve(strict=False)
-    global_skills_dir = (get_config_dir() / "skills").resolve(strict=False)
+    for skills_dir in _project_skill_dirs(resolved_cwd):
+        add_skills(_load_skills_from_dir(skills_dir))
 
-    add_skills(_load_skills_from_dir(local_skills_dir))
-    if global_skills_dir != local_skills_dir:
-        add_skills(_load_skills_from_dir(global_skills_dir))
+    legacy_project_skills_dir = (resolved_cwd / ".kon" / "skills").resolve(strict=False)
+    add_skills(
+        _load_skills_from_dir(
+            legacy_project_skills_dir,
+            legacy_warning=(
+                f"Legacy project skills at {shorten_path(str(legacy_project_skills_dir))} are deprecated. "
+                "Move them to .agents/skills; the old .kon/skills directory can be removed after migration."
+            ),
+        )
+    )
+
+    user_skills_dir = (get_config_dir() / "skills").resolve(strict=False)
+    if user_skills_dir != legacy_project_skills_dir:
+        add_skills(_load_skills_from_dir(user_skills_dir))
+
+    legacy_user_skills_dir = (get_legacy_config_dir() / "skills").resolve(strict=False)
+    if legacy_user_skills_dir != legacy_project_skills_dir:
+        add_skills(
+            _load_skills_from_dir(
+                legacy_user_skills_dir,
+                legacy_warning=(
+                    "Legacy user skills at ~/.kon/skills are deprecated. Move them to ~/.agents/skills; "
+                    "legacy support will be removed later."
+                ),
+            )
+        )
 
     return LoadSkillsResult(skills=list(skill_map.values()), warnings=all_warnings)
 
