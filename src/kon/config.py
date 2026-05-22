@@ -13,9 +13,10 @@ from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from .path_migration import consume_path_migration_warnings, get_path_state, reset_path_state
 from .themes import ColorsConfig, get_theme, get_theme_ids
 
-CONFIG_DIR_NAME: str = ".kon"
+CONFIG_DIR_NAME: str = "kon"
 
 OnOverflowMode = Literal["continue", "pause"]
 AuthMode = Literal["auto", "required", "none"]
@@ -222,7 +223,15 @@ class Config:
 
 
 def get_config_dir() -> Path:
-    return Path.home() / CONFIG_DIR_NAME
+    return get_path_state().config_dir
+
+
+def get_legacy_config_dir() -> Path:
+    return get_path_state().legacy_config_dir
+
+
+def get_agents_dir() -> Path:
+    return get_path_state().agents_dir
 
 
 def _ensure_config_file() -> Path:
@@ -242,7 +251,7 @@ def _record_config_warning(message: str) -> None:
 
 
 def consume_config_warnings() -> list[str]:
-    warnings = _config_warnings.copy()
+    warnings = consume_path_migration_warnings() + _config_warnings.copy()
     _config_warnings.clear()
     return warnings
 
@@ -250,7 +259,7 @@ def consume_config_warnings() -> list[str]:
 def _detect_available_binaries() -> set[str]:
     binaries = {"rg", "fd"}
     available = set()
-    bin_dir = Path.home() / CONFIG_DIR_NAME / "bin"
+    bin_dir = get_config_dir() / "bin"
 
     for binary in binaries:
         if shutil.which(binary) or (bin_dir / binary).exists():
@@ -639,3 +648,4 @@ def reset_config() -> None:
     """Reset config to uninitialized state (next get_config() will reload from file)."""
     _config_var.set(None)
     _config_warnings.clear()
+    reset_path_state()
