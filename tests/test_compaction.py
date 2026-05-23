@@ -355,6 +355,16 @@ class _TestCommandsApp(CommandsMixin):
 
 
 class TestCompactionUsageBacktracking:
+    def test_manual_compaction_without_messages_is_error(self, fake_chat):
+        session = Session.in_memory()
+        provider = MockProvider()
+        app = _TestCommandsApp(session=session, provider=provider, chat=fake_chat)
+
+        app._handle_compact_command()
+
+        assert fake_chat.errors == ["No conversation to compact"]
+        assert fake_chat.infos == []
+
     @pytest.mark.asyncio
     async def test_manual_compaction_uses_latest_assistant_with_usage(
         self, monkeypatch, fake_chat

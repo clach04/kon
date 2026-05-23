@@ -898,7 +898,7 @@ class CommandsMixin:
             return
 
         if not self._runtime.session.all_messages:
-            chat.add_info_message("No conversation to compact")
+            chat.add_info_message("No conversation to compact", error=True)
             return
 
         chat.show_spinner_status("Compacting...")
