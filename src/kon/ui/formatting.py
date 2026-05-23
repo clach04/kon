@@ -177,10 +177,10 @@ def _format_bash_command_tokens(command: str) -> Text:
     highlighting instead of dimming argv text.
     """
     syntax = config.ui.colors.syntax_colors
-    command_style = f"{syntax.command} bold"
+    command_style = syntax.command
     arg_style = syntax.arg
     option_style = syntax.option
-    operator_style = f"{syntax.operator} bold"
+    operator_style = syntax.operator
     string_style = syntax.string
     variable_style = syntax.variable
 
