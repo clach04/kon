@@ -178,7 +178,7 @@ def test_openai_codex_request_uses_session_for_prompt_caching() -> None:
 
     assert body["prompt_cache_key"] == "session-123"
     assert headers["session_id"] == "session-123"
-    assert headers["conversation_id"] == "session-123"
+    assert headers["x-client-request-id"] == "session-123"
 
 
 def test_openai_codex_request_omits_prompt_cache_fields_without_session() -> None:

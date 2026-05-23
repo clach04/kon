@@ -1,7 +1,12 @@
 import asyncio
+import contextlib
 import json
+import re
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -29,7 +34,29 @@ _MAX_RETRIES = 3
 _BASE_DELAY_MS = 1000
 _CONNECT_TIMEOUT_SECONDS = 30
 _OPENAI_BETA_RESPONSES_WEBSOCKETS = "responses_websockets=2026-02-06"
+_PROMPT_CACHE_KEY_MAX_LENGTH = 64
+_SESSION_WEBSOCKET_CACHE_TTL_SECONDS = 5 * 60
 _WS_FALLBACK_SESSIONS: set[str] = set()
+
+
+@dataclass
+class _CachedWebSocketContinuation:
+    last_request_body: dict[str, Any]
+    last_response_id: str
+    last_response_items: list[dict[str, Any]]
+
+
+@dataclass
+class _CachedWebSocketConnection:
+    session: aiohttp.ClientSession
+    ws: aiohttp.ClientWebSocketResponse
+    busy: bool = False
+    idle_handle: asyncio.TimerHandle | None = None
+    continuation: _CachedWebSocketContinuation | None = None
+
+
+_WS_SESSION_CACHE: dict[str, _CachedWebSocketConnection] = {}
+_WS_CLOSE_TASKS: set[asyncio.Task[None]] = set()
 
 
 class CodexTransportError(Exception):
@@ -51,6 +78,131 @@ def _format_provider_error(error: Exception) -> str:
 
 def _is_retryable_status(status: int) -> bool:
     return status in (429, 500, 502, 503, 504)
+
+
+def _is_retryable_response_error(status: int, error_text: str) -> bool:
+    if _is_retryable_status(status):
+        return True
+    return (
+        re.search(
+            r"rate.?limit|overloaded|service.?unavailable|upstream.?connect|connection.?refused",
+            error_text,
+            re.IGNORECASE,
+        )
+        is not None
+    )
+
+
+def _clamp_prompt_cache_key(key: str | None) -> str | None:
+    if key is None:
+        return None
+    return "".join(list(key)[:_PROMPT_CACHE_KEY_MAX_LENGTH])
+
+
+def _retry_delay_seconds(response: aiohttp.ClientResponse, attempt: int) -> float:
+    retry_after_ms = response.headers.get("retry-after-ms")
+    if retry_after_ms is not None:
+        with contextlib.suppress(ValueError):
+            return max(0.0, float(retry_after_ms) / 1000)
+
+    retry_after = response.headers.get("retry-after")
+    if retry_after:
+        with contextlib.suppress(ValueError):
+            return max(0.0, float(retry_after))
+        with contextlib.suppress(ValueError, TypeError):
+            parsed = parsedate_to_datetime(retry_after)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=UTC)
+            return max(0.0, (parsed - datetime.now(UTC)).total_seconds())
+
+    return _BASE_DELAY_MS * (2**attempt) / 1000
+
+
+def _request_body_without_input(body: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value for key, value in body.items() if key not in {"input", "previous_response_id"}
+    }
+
+
+def _get_cached_websocket_input_delta(
+    body: dict[str, Any], continuation: _CachedWebSocketContinuation
+) -> list[dict[str, Any]] | None:
+    if _request_body_without_input(body) != _request_body_without_input(
+        continuation.last_request_body
+    ):
+        return None
+
+    current_input = body.get("input") or []
+    if not isinstance(current_input, list):
+        return None
+
+    last_input = continuation.last_request_body.get("input") or []
+    if not isinstance(last_input, list):
+        return None
+
+    baseline = [*last_input, *continuation.last_response_items]
+    if len(current_input) < len(baseline):
+        return None
+
+    if current_input[: len(baseline)] != baseline:
+        return None
+
+    delta = current_input[len(baseline) :]
+    return delta if all(isinstance(item, dict) for item in delta) else None
+
+
+def _build_cached_websocket_request_body(
+    entry: _CachedWebSocketConnection, body: dict[str, Any]
+) -> dict[str, Any]:
+    continuation = entry.continuation
+    if continuation is None:
+        return body
+
+    delta = _get_cached_websocket_input_delta(body, continuation)
+    if delta is None or not continuation.last_response_id:
+        entry.continuation = None
+        return body
+
+    return {**body, "previous_response_id": continuation.last_response_id, "input": delta}
+
+
+def _is_websocket_reusable(entry: _CachedWebSocketConnection) -> bool:
+    return not entry.ws.closed and not entry.session.closed
+
+
+def _websocket_connect_headers(headers: dict[str, str]) -> dict[str, str]:
+    connect_headers = dict(headers)
+    connect_headers.pop("OpenAI-Beta", None)
+    connect_headers.pop("openai-beta", None)
+    return connect_headers
+
+
+async def _close_websocket_entry(entry: _CachedWebSocketConnection) -> None:
+    if entry.idle_handle:
+        entry.idle_handle.cancel()
+        entry.idle_handle = None
+    with contextlib.suppress(Exception):
+        await entry.ws.close(code=1000, message=b"done")
+    with contextlib.suppress(Exception):
+        await entry.session.close()
+
+
+def _schedule_websocket_expiry(session_id: str, entry: _CachedWebSocketConnection) -> None:
+    if entry.idle_handle:
+        entry.idle_handle.cancel()
+
+    loop = asyncio.get_running_loop()
+
+    def _expire() -> None:
+        if entry.busy:
+            return
+        if _WS_SESSION_CACHE.get(session_id) is entry:
+            _WS_SESSION_CACHE.pop(session_id, None)
+        task = asyncio.create_task(_close_websocket_entry(entry))
+        _WS_CLOSE_TASKS.add(task)
+        task.add_done_callback(_WS_CLOSE_TASKS.discard)
+
+    entry.idle_handle = loop.call_later(_SESSION_WEBSOCKET_CACHE_TTL_SECONDS, _expire)
 
 
 class OpenAICodexResponsesProvider(BaseProvider):
@@ -102,7 +254,7 @@ class OpenAICodexResponsesProvider(BaseProvider):
                 "name": tool.name,
                 "description": tool.description,
                 "parameters": tool.parameters,
-                "strict": False,
+                "strict": None,
             }
             for tool in tools
         ]
@@ -137,16 +289,17 @@ class OpenAICodexResponsesProvider(BaseProvider):
             "model": self.config.model,
             "store": False,
             "stream": True,
-            "instructions": system_prompt or "",
+            "instructions": system_prompt or "You are a helpful assistant.",
             "input": self._build_input(messages, None),
             "include": ["reasoning.encrypted_content"],
-            "text": {"verbosity": "medium"},
+            "text": {"verbosity": "low"},
             "tool_choice": "auto",
             "parallel_tool_calls": True,
         }
 
-        if self.config.session_id:
-            body["prompt_cache_key"] = self.config.session_id
+        prompt_cache_key = _clamp_prompt_cache_key(self.config.session_id)
+        if prompt_cache_key:
+            body["prompt_cache_key"] = prompt_cache_key
 
         tool_payload = self._build_tools(tools)
         if tool_payload:
@@ -154,6 +307,8 @@ class OpenAICodexResponsesProvider(BaseProvider):
 
         effort = self.config.thinking_level
         if effort and effort != "none":
+            if effort == "minimal":
+                effort = "low"
             body["reasoning"] = {"effort": effort, "summary": "auto"}
 
         temp = temperature if temperature is not None else self.config.temperature
@@ -175,7 +330,6 @@ class OpenAICodexResponsesProvider(BaseProvider):
         if self.config.session_id:
             headers["session_id"] = self.config.session_id
             headers["x-client-request-id"] = self.config.session_id
-            headers["conversation_id"] = self.config.session_id
         return headers
 
     def _build_websocket_headers(self, token: str, account_id: str) -> dict[str, str]:
@@ -207,9 +361,18 @@ class OpenAICodexResponsesProvider(BaseProvider):
 
         if session_id not in _WS_FALLBACK_SESSIONS:
             emitted = False
+            websocket_started = False
+
+            def mark_websocket_started(_event: dict[str, Any]) -> None:
+                nonlocal websocket_started
+                websocket_started = True
+
             try:
                 websocket_events = self._stream_websocket_events(
-                    body, self._build_websocket_headers(token, account_id)
+                    body,
+                    self._build_websocket_headers(token, account_id),
+                    session_id=session_id,
+                    on_event=mark_websocket_started,
                 )
                 async for part in self._process_codex_events(websocket_events, llm_stream):
                     emitted = True
@@ -218,12 +381,12 @@ class OpenAICodexResponsesProvider(BaseProvider):
             except CodexNonTransportError as e:
                 yield StreamError(error=_format_provider_error(e))
                 return
-            except (CodexTransportError, aiohttp.ClientError, OSError) as e:
-                if emitted:
-                    yield StreamError(error=_format_provider_error(e))
-                    return
+            except (CodexTransportError, aiohttp.ClientError, OSError, TimeoutError) as e:
                 if session_id:
                     _WS_FALLBACK_SESSIONS.add(session_id)
+                if emitted or websocket_started:
+                    yield StreamError(error=_format_provider_error(e))
+                    return
 
         try:
             sse_events = self._stream_sse_events(body, self._build_headers(token, account_id))
@@ -403,13 +566,24 @@ class OpenAICodexResponsesProvider(BaseProvider):
         async with aiohttp.ClientSession(timeout=timeout) as session:
             response: aiohttp.ClientResponse | None = None
             for attempt in range(_MAX_RETRIES + 1):
-                response = await session.post(self._resolve_url(), headers=headers, json=body)
+                try:
+                    response = await session.post(self._resolve_url(), headers=headers, json=body)
+                except (aiohttp.ClientError, OSError, TimeoutError) as e:
+                    last_error = _format_provider_error(e)
+                    if attempt < _MAX_RETRIES:
+                        delay = _BASE_DELAY_MS * (2**attempt) / 1000
+                        await asyncio.sleep(delay)
+                        continue
+                    raise CodexTransportError(last_error) from e
+
                 if response.status < 400:
                     break
                 error_text = await response.text()
                 last_error = f"Codex API error ({response.status}): {error_text}"
-                if attempt < _MAX_RETRIES and _is_retryable_status(response.status):
-                    delay = _BASE_DELAY_MS * (2**attempt) / 1000
+                if attempt < _MAX_RETRIES and _is_retryable_response_error(
+                    response.status, error_text
+                ):
+                    delay = _retry_delay_seconds(response, attempt)
                     await asyncio.sleep(delay)
                     continue
                 raise CodexNonTransportError(last_error, status=response.status)
@@ -420,22 +594,146 @@ class OpenAICodexResponsesProvider(BaseProvider):
             async for event in self._parse_sse(response):
                 yield event
 
-    async def _stream_websocket_events(
-        self, body: dict[str, Any], headers: dict[str, str]
-    ) -> AsyncIterator[dict[str, Any]]:
+    async def _new_websocket_connection(
+        self, headers: dict[str, str]
+    ) -> _CachedWebSocketConnection:
         timeout = aiohttp.ClientTimeout(
             sock_connect=_CONNECT_TIMEOUT_SECONDS, sock_read=kon_config.llm.request_timeout_seconds
         )
         ws_timeout = aiohttp.ClientWSTimeout(ws_receive=kon_config.llm.request_timeout_seconds)  # type: ignore[call-arg]
-        async with (
-            aiohttp.ClientSession(timeout=timeout) as session,
-            session.ws_connect(
-                self._resolve_websocket_url(), headers=headers, heartbeat=20, timeout=ws_timeout
-            ) as ws,
-        ):
-            await ws.send_json({"type": "response.create", **body})
+        session = aiohttp.ClientSession(timeout=timeout)
+        try:
+            ws = await session.ws_connect(
+                self._resolve_websocket_url(),
+                headers=_websocket_connect_headers(headers),
+                heartbeat=20,
+                timeout=ws_timeout,
+            )
+        except Exception:
+            await session.close()
+            raise
+        return _CachedWebSocketConnection(session=session, ws=ws, busy=True)
+
+    async def _acquire_websocket(
+        self, headers: dict[str, str], session_id: str | None
+    ) -> tuple[_CachedWebSocketConnection, bool, Callable[..., Awaitable[None]]]:
+        if not session_id:
+            entry = await self._new_websocket_connection(headers)
+
+            async def release(*, keep: bool = False) -> None:
+                await _close_websocket_entry(entry)
+
+            return entry, False, release
+
+        cached = _WS_SESSION_CACHE.get(session_id)
+        if cached:
+            if cached.idle_handle:
+                cached.idle_handle.cancel()
+                cached.idle_handle = None
+            if not cached.busy and _is_websocket_reusable(cached):
+                cached.busy = True
+
+                async def release_cached(*, keep: bool = True) -> None:
+                    if not keep or not _is_websocket_reusable(cached):
+                        if _WS_SESSION_CACHE.get(session_id) is cached:
+                            _WS_SESSION_CACHE.pop(session_id, None)
+                        await _close_websocket_entry(cached)
+                        return
+                    cached.busy = False
+                    _schedule_websocket_expiry(session_id, cached)
+
+                return cached, True, release_cached
+
+            if cached.busy:
+                entry = await self._new_websocket_connection(headers)
+
+                async def release_uncached(*, keep: bool = False) -> None:
+                    await _close_websocket_entry(entry)
+
+                return entry, False, release_uncached
+
+            if not _is_websocket_reusable(cached):
+                _WS_SESSION_CACHE.pop(session_id, None)
+                await _close_websocket_entry(cached)
+
+        entry = await self._new_websocket_connection(headers)
+        _WS_SESSION_CACHE[session_id] = entry
+
+        async def release_new(*, keep: bool = True) -> None:
+            if not keep or not _is_websocket_reusable(entry):
+                if _WS_SESSION_CACHE.get(session_id) is entry:
+                    _WS_SESSION_CACHE.pop(session_id, None)
+                await _close_websocket_entry(entry)
+                return
+            entry.busy = False
+            _schedule_websocket_expiry(session_id, entry)
+
+        return entry, False, release_new
+
+    def _response_item_for_cache(self, item: dict[str, Any]) -> dict[str, Any] | None:
+        item_type = item.get("type")
+        if item_type == "message":
+            content: list[dict[str, Any]] = []
+            raw_content = item.get("content")
+            if isinstance(raw_content, list):
+                for part in raw_content:
+                    if not isinstance(part, dict):
+                        continue
+                    if part.get("type") == "output_text":
+                        text = part.get("text")
+                        if isinstance(text, str):
+                            content.append(
+                                {"type": "output_text", "text": text, "annotations": []}
+                            )
+                    elif part.get("type") == "refusal":
+                        refusal = part.get("refusal")
+                        if isinstance(refusal, str):
+                            content.append({"type": "refusal", "refusal": refusal})
+            if not content:
+                return None
+            return {
+                "type": "message",
+                "role": "assistant",
+                "content": content,
+                "status": "completed",
+            }
+
+        if item_type == "function_call":
+            call_id = item.get("call_id")
+            name = item.get("name")
+            if not isinstance(call_id, str) or not isinstance(name, str):
+                return None
+            arguments = item.get("arguments")
+            if isinstance(arguments, str) and arguments:
+                with contextlib.suppress(json.JSONDecodeError):
+                    arguments = json.dumps(json.loads(arguments))
+            return {
+                "type": "function_call",
+                "id": item.get("id") if isinstance(item.get("id"), str) else None,
+                "call_id": call_id,
+                "name": name,
+                "arguments": arguments if isinstance(arguments, str) else "",
+            }
+
+        return None
+
+    async def _stream_websocket_events(
+        self,
+        body: dict[str, Any],
+        headers: dict[str, str],
+        session_id: str | None = None,
+        on_event: Callable[[dict[str, Any]], None] | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
+        entry, _, release = await self._acquire_websocket(headers, session_id)
+        request_body = _build_cached_websocket_request_body(entry, body)
+        keep_connection = True
+        response_id: str | None = None
+        response_items: list[dict[str, Any]] = []
+
+        try:
+            await entry.ws.send_json({"type": "response.create", **request_body})
             saw_completion = False
-            async for msg in ws:
+            async for msg in entry.ws:
                 if msg.type in {aiohttp.WSMsgType.TEXT, aiohttp.WSMsgType.BINARY}:
                     try:
                         raw = (
@@ -448,22 +746,53 @@ class OpenAICodexResponsesProvider(BaseProvider):
                         raise CodexNonTransportError(f"Invalid Codex WebSocket JSON: {e}") from e
                     if not isinstance(event, dict):
                         continue
+                    if on_event:
+                        on_event(event)
                     event_type = event.get("type")
+                    if event_type == "response.created":
+                        response_obj = event.get("response")
+                        if isinstance(response_obj, dict) and isinstance(
+                            response_obj.get("id"), str
+                        ):
+                            response_id = response_obj["id"]
+                    elif event_type == "response.output_item.done":
+                        item = event.get("item")
+                        if isinstance(item, dict):
+                            response_item = self._response_item_for_cache(item)
+                            if response_item is not None:
+                                response_items.append(response_item)
                     if event_type in {
                         "response.completed",
                         "response.done",
                         "response.incomplete",
                     }:
                         saw_completion = True
+                        response_obj = event.get("response")
+                        if isinstance(response_obj, dict) and isinstance(
+                            response_obj.get("id"), str
+                        ):
+                            response_id = response_obj["id"]
                     yield event
                     if saw_completion:
+                        if response_id and response_items:
+                            entry.continuation = _CachedWebSocketContinuation(
+                                last_request_body=body,
+                                last_response_id=response_id,
+                                last_response_items=response_items,
+                            )
                         return
                 elif msg.type == aiohttp.WSMsgType.ERROR:
-                    error = ws.exception()
+                    error = entry.ws.exception()
                     raise CodexTransportError(str(error) if error else "WebSocket error")
 
             if not saw_completion:
                 raise CodexTransportError("WebSocket stream closed before response.completed")
+        except Exception:
+            entry.continuation = None
+            keep_connection = False
+            raise
+        finally:
+            await release(keep=keep_connection)
 
     async def _parse_sse(self, response: aiohttp.ClientResponse) -> AsyncIterator[dict[str, Any]]:
         buffer = ""

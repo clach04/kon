@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
@@ -16,17 +17,28 @@ from kon.llm.oauth.openai import OpenAICredentials
 from kon.llm.providers import openai_codex_responses as codex_provider
 from kon.llm.providers.openai_codex_responses import (
     _WS_FALLBACK_SESSIONS,
+    _WS_SESSION_CACHE,
     CodexTransportError,
     OpenAICodexResponsesProvider,
     _format_provider_error,
+    _is_retryable_response_error,
+    _websocket_connect_headers,
 )
 
 
 @pytest.fixture(autouse=True)
 def _clear_ws_fallback_sessions():
     _WS_FALLBACK_SESSIONS.clear()
+    for entry in _WS_SESSION_CACHE.values():
+        if entry.idle_handle:
+            entry.idle_handle.cancel()
+    _WS_SESSION_CACHE.clear()
     yield
     _WS_FALLBACK_SESSIONS.clear()
+    for entry in _WS_SESSION_CACHE.values():
+        if entry.idle_handle:
+            entry.idle_handle.cancel()
+    _WS_SESSION_CACHE.clear()
 
 
 async def _async_iter(events: list[dict[str, Any]]) -> AsyncIterator[dict[str, Any]]:
@@ -63,6 +75,49 @@ def test_websocket_headers_use_beta_and_request_id():
     assert headers["x-client-request-id"] == "session-123"
     assert "accept" not in headers
     assert "content-type" not in headers
+
+
+def test_websocket_connect_headers_strip_openai_beta():
+    headers = {
+        "Authorization": "Bearer token",
+        "OpenAI-Beta": "responses_websockets=2026-02-06",
+        "openai-beta": "lowercase",
+    }
+
+    connect_headers = _websocket_connect_headers(headers)
+
+    assert connect_headers == {"Authorization": "Bearer token"}
+    assert "OpenAI-Beta" in headers
+    assert "openai-beta" in headers
+
+
+def test_request_body_matches_pi_codex_defaults_and_clamps_cache_key():
+    long_session_id = "x" * 80
+    provider = OpenAICodexResponsesProvider(
+        ProviderConfig(session_id=long_session_id, model="gpt-5.4", thinking_level="minimal")
+    )
+
+    body = provider._build_request_body([], None, None, None)
+
+    assert body["instructions"] == "You are a helpful assistant."
+    assert body["text"] == {"verbosity": "low"}
+    assert body["prompt_cache_key"] == "x" * 64
+    assert body["reasoning"] == {"effort": "low", "summary": "auto"}
+
+
+@pytest.mark.parametrize(
+    ("status", "error_text", "expected"),
+    [
+        (429, "quota", True),
+        (418, "upstream connect error", True),
+        (400, "service unavailable upstream", True),
+        (400, "bad request", False),
+    ],
+)
+def test_retryable_response_error_matches_status_or_transient_text(
+    status: int, error_text: str, expected: bool
+):
+    assert _is_retryable_response_error(status, error_text) is expected
 
 
 @pytest.mark.asyncio
@@ -144,7 +199,9 @@ async def test_stream_falls_back_to_sse_when_websocket_fails_before_events(monke
 
 
 @pytest.mark.asyncio
-async def test_stream_emits_stream_error_and_skips_fallback_on_mid_stream_ws_failure(monkeypatch):
+async def test_stream_emits_stream_error_and_records_fallback_on_mid_stream_ws_failure(
+    monkeypatch,
+):
     provider = OpenAICodexResponsesProvider(
         ProviderConfig(session_id="session-mid", model="gpt-5.4")
     )
@@ -183,7 +240,46 @@ async def test_stream_emits_stream_error_and_skips_fallback_on_mid_stream_ws_fai
     assert isinstance(parts[1], StreamError)
     assert "late failure" in parts[1].error
     assert sse_calls == []
-    assert "session-mid" not in _WS_FALLBACK_SESSIONS
+    assert "session-mid" in _WS_FALLBACK_SESSIONS
+
+
+@pytest.mark.asyncio
+async def test_stream_does_not_replay_sse_after_raw_websocket_event(monkeypatch):
+    provider = OpenAICodexResponsesProvider(
+        ProviderConfig(session_id="session-raw-start", model="gpt-5.4")
+    )
+
+    async def ws_events(*args, **kwargs):
+        on_event = kwargs.get("on_event")
+        if on_event:
+            on_event({"type": "response.created", "response": {"id": "resp_1"}})
+        raise CodexTransportError("closed after create")
+        yield
+
+    def sse_events(*args, **kwargs):
+        pytest.fail("SSE fallback should not replay after a raw websocket event")
+
+    monkeypatch.setattr(provider, "_stream_websocket_events", ws_events)
+    monkeypatch.setattr(provider, "_stream_sse_events", sse_events)
+
+    parts = [
+        part
+        async for part in provider._stream_codex(
+            token="t",
+            account_id="a",
+            messages=[],
+            system_prompt=None,
+            tools=None,
+            temperature=None,
+            max_tokens=None,
+            llm_stream=LLMStream(),
+        )
+    ]
+
+    assert len(parts) == 1
+    assert isinstance(parts[0], StreamError)
+    assert "closed after create" in parts[0].error
+    assert "session-raw-start" in _WS_FALLBACK_SESSIONS
 
 
 @pytest.mark.asyncio
@@ -216,6 +312,122 @@ async def test_stream_propagates_non_codex_exception_from_websocket_setup(monkey
             pass
 
     assert "session-bug" not in _WS_FALLBACK_SESSIONS
+
+
+@pytest.mark.asyncio
+async def test_websocket_reuse_sends_only_cached_input_delta(monkeypatch):
+    provider = OpenAICodexResponsesProvider(
+        ProviderConfig(session_id="session-cache", model="gpt-5.4")
+    )
+    sent_bodies: list[dict[str, Any]] = []
+    response_ids = ["resp_1", "resp_2"]
+    message_ids = ["msg_1", "msg_2"]
+    response_texts = ["Hello", "Done"]
+
+    class FakeSession:
+        closed = False
+
+        async def close(self) -> None:
+            self.closed = True
+
+    class FakeWebSocket:
+        closed = False
+
+        def __init__(self) -> None:
+            self._events: list[dict[str, Any]] = []
+
+        async def send_json(self, payload: dict[str, Any]) -> None:
+            sent_bodies.append(payload)
+            response_id = response_ids.pop(0)
+            message_id = message_ids.pop(0)
+            text = response_texts.pop(0)
+            self._events = [
+                {"type": "response.created", "response": {"id": response_id}},
+                {
+                    "type": "response.output_item.done",
+                    "item": {
+                        "type": "message",
+                        "id": message_id,
+                        "role": "assistant",
+                        "status": "completed",
+                        "content": [{"type": "output_text", "text": text}],
+                    },
+                },
+                {
+                    "type": "response.completed",
+                    "response": {"id": response_id, "status": "completed"},
+                },
+            ]
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if not self._events:
+                raise StopAsyncIteration
+            return SimpleNamespace(
+                type=codex_provider.aiohttp.WSMsgType.TEXT,
+                data=codex_provider.json.dumps(self._events.pop(0)),
+            )
+
+        def exception(self):
+            return None
+
+        async def close(self, *args, **kwargs) -> None:
+            self.closed = True
+
+    fake_ws = FakeWebSocket()
+
+    async def fake_new_connection(headers):
+        return codex_provider._CachedWebSocketConnection(
+            session=cast(Any, FakeSession()), ws=cast(Any, fake_ws), busy=True
+        )
+
+    monkeypatch.setattr(provider, "_new_websocket_connection", fake_new_connection)
+
+    first_body = {
+        "model": "gpt-5.4",
+        "store": False,
+        "stream": True,
+        "input": [{"role": "user", "content": [{"type": "input_text", "text": "Say hello"}]}],
+    }
+    first_events = [
+        event
+        async for event in provider._stream_websocket_events(
+            first_body, {"Authorization": "Bearer t"}, session_id="session-cache"
+        )
+    ]
+    assert first_events[-1]["type"] == "response.completed"
+
+    second_body = {
+        "model": "gpt-5.4",
+        "store": False,
+        "stream": True,
+        "input": [
+            {"role": "user", "content": [{"type": "input_text", "text": "Say hello"}]},
+            {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "Hello", "annotations": []}],
+                "status": "completed",
+            },
+            {"role": "user", "content": [{"type": "input_text", "text": "Now finish"}]},
+        ],
+    }
+    second_events = [
+        event
+        async for event in provider._stream_websocket_events(
+            second_body, {"Authorization": "Bearer t"}, session_id="session-cache"
+        )
+    ]
+    assert second_events[-1]["type"] == "response.completed"
+
+    assert len(sent_bodies) == 2
+    assert sent_bodies[0].get("previous_response_id") is None
+    assert sent_bodies[1]["previous_response_id"] == "resp_1"
+    assert sent_bodies[1]["input"] == [
+        {"role": "user", "content": [{"type": "input_text", "text": "Now finish"}]}
+    ]
 
 
 @pytest.mark.asyncio
