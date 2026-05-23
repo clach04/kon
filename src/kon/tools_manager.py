@@ -81,10 +81,6 @@ def _get_arch() -> str:
     return "x86_64"
 
 
-def _command_exists(cmd: str) -> bool:
-    return shutil.which(cmd) is not None
-
-
 def get_tool_path(tool: ToolName) -> str | None:
     config = _TOOLS.get(tool)
     if not config:
@@ -95,10 +91,10 @@ def get_tool_path(tool: ToolName) -> str | None:
     if local_path.exists():
         return str(local_path)
 
-    if _command_exists(config.binary_name):
-        return config.binary_name
+    if tool == "fd":
+        return shutil.which("fd") or shutil.which("fdfind")
 
-    return None
+    return shutil.which(config.binary_name)
 
 
 async def _get_latest_version(session: aiohttp.ClientSession, repo: str) -> str:

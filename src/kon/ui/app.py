@@ -1,7 +1,6 @@
 import asyncio
 import glob
 import os
-import shutil
 import time
 import tomllib
 from collections import deque
@@ -15,7 +14,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 
 from kon import config, consume_config_warnings, update_available_binaries
-from kon.tools_manager import ensure_tools
+from kon.tools_manager import ensure_tools, get_tool_path
 
 from ..context.skills import (
     load_builtin_cmd_skills,
@@ -334,10 +333,7 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
             self.copy_to_clipboard(selection)
 
     def on_mount(self) -> None:
-        if config.binaries.fd:
-            self._fd_path = shutil.which("fd") or shutil.which("fdfind")
-        else:
-            self._fd_path = None
+        self._fd_path = get_tool_path("fd")
 
         input_box = self.query_one("#input-box", InputBox)
         input_box.set_fd_path(self._fd_path)
