@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from .context import Context
 from .core.compaction import generate_summary
 from .core.handoff import generate_handoff_prompt
 from .core.types import AssistantMessage, TextContent, UserMessage
@@ -83,9 +84,11 @@ class ConversationRuntime:
         self.session: Session | None = None
         self.agent: Agent | None = None
 
-    def resolve_system_prompt(self, session: Session | None = None) -> str:
+    def resolve_system_prompt(
+        self, session: Session | None = None, context: Context | None = None
+    ) -> str:
         return (session.system_prompt if session else None) or build_system_prompt(
-            self.cwd, tools=self.tools
+            self.cwd, context=context, tools=self.tools
         )
 
     def _provider_config(
@@ -118,19 +121,24 @@ class ConversationRuntime:
         api_type = resolve_provider_api_type(provider)
         return api_type, self.base_url or default_base_url_for_api(api_type)
 
-    def _new_agent(self, provider: BaseProvider, session: Session) -> Agent:
+    def _new_agent(
+        self, provider: BaseProvider, session: Session, context: Context | None = None
+    ) -> Agent:
+        context = context or Context.load(self.cwd)
         return Agent(
             provider=provider,
             tools=self.tools,
             session=session,
             cwd=self.cwd,
-            system_prompt=self.resolve_system_prompt(session),
+            context=context,
+            system_prompt=self.resolve_system_prompt(session, context=context),
         )
 
     def initialize(
         self, *, resume_session: str | None = None, continue_recent: bool = False
     ) -> RuntimeInitResult:
         session: Session | None = None
+        context = Context.load(self.cwd)
         model = self.model
         model_provider = self.model_provider
         base_url_override = self.base_url
@@ -151,7 +159,7 @@ class ConversationRuntime:
                 provider=model_provider,
                 model_id=model,
                 thinking_level=thinking_level,
-                system_prompt=self.resolve_system_prompt(None),
+                system_prompt=self.resolve_system_prompt(None, context=context),
             )
             if session.entries:
                 model_info = session.model
@@ -196,7 +204,7 @@ class ConversationRuntime:
                 provider=model_provider,
                 model_id=model,
                 thinking_level=thinking_level,
-                system_prompt=self.resolve_system_prompt(None),
+                system_prompt=self.resolve_system_prompt(None, context=context),
                 tools=[t.name for t in self.tools],
             )
             if model_provider:
@@ -207,7 +215,7 @@ class ConversationRuntime:
         self.thinking_level = thinking_level
         self.provider = provider
         self.session = session
-        self.agent = self._new_agent(provider, session) if provider and session else None
+        self.agent = self._new_agent(provider, session, context) if provider and session else None
         self._sync_provider_session_id()
 
         return RuntimeInitResult(provider_error=provider_error)
