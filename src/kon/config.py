@@ -77,6 +77,10 @@ class AuthConfig(BaseModel):
     anthropic_compat: AuthMode = "auto"
 
 
+class TLSConfig(BaseModel):
+    insecure_skip_verify: bool = False
+
+
 class LLMConfig(BaseModel):
     default_provider: str
     default_model: str
@@ -86,6 +90,7 @@ class LLMConfig(BaseModel):
     tool_call_idle_timeout_seconds: float = 180
     request_timeout_seconds: float = 600
     auth: AuthConfig = AuthConfig()
+    tls: TLSConfig = TLSConfig()
 
 
 class CompactionConfig(BaseModel):

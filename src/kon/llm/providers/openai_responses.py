@@ -26,7 +26,7 @@ from ...core.types import (
     Usage,
     UserMessage,
 )
-from ..base import BaseProvider, LLMStream, ProviderConfig
+from ..base import BaseProvider, LLMStream, ProviderConfig, make_http_client
 from .openai_compat import supports_developer_role
 from .sanitize import sanitize_surrogates
 
@@ -54,6 +54,7 @@ class OpenAIResponsesProvider(BaseProvider):
                 base_url=self.config.base_url,
                 default_headers=self._headers,
                 timeout=kon_config.llm.request_timeout_seconds,
+                http_client=make_http_client(),
             )
         return self._client
 

@@ -5,6 +5,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Kon TUI")
     parser.add_argument("--openai-compat-auth", choices=("auto", "required", "none"))
     parser.add_argument("--anthropic-compat-auth", choices=("auto", "required", "none"))
+    parser.add_argument("--insecure-skip-verify", action="store_true")
     return parser
 
 
@@ -24,3 +25,11 @@ def test_cli_auth_flags_default_to_none_when_omitted() -> None:
 
     assert args.openai_compat_auth is None
     assert args.anthropic_compat_auth is None
+    assert args.insecure_skip_verify is False
+
+
+def test_insecure_skip_verify_flag_sets_true() -> None:
+    parser = build_parser()
+    args = parser.parse_args(["--insecure-skip-verify"])
+
+    assert args.insecure_skip_verify is True

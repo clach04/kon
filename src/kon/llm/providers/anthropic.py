@@ -39,7 +39,7 @@ from ...core.types import (
     Usage,
     UserMessage,
 )
-from ..base import BaseProvider, LLMStream, ProviderConfig, resolve_api_key
+from ..base import BaseProvider, LLMStream, ProviderConfig, make_http_client, resolve_api_key
 from .anthropic_capabilities import lookup_capabilities, supports_adaptive_thinking
 from .sanitize import sanitize_surrogates
 
@@ -89,7 +89,11 @@ class AnthropicProvider(BaseProvider):
                 'or configure llm.auth.anthropic_compat = "auto"/"none" for local endpoints.'
             )
 
-        self._client = AsyncAnthropic(api_key=api_key, base_url=config.base_url)
+        self._client = AsyncAnthropic(
+            api_key=api_key,
+            base_url=config.base_url,
+            http_client=make_http_client(),
+        )
 
     async def _stream_impl(
         self,

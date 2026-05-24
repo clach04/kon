@@ -32,7 +32,14 @@ from ...core.types import (
     Usage,
     UserMessage,
 )
-from ..base import BaseProvider, LLMStream, ProviderConfig, is_local_base_url, resolve_api_key
+from ..base import (
+    BaseProvider,
+    LLMStream,
+    ProviderConfig,
+    is_local_base_url,
+    make_http_client,
+    resolve_api_key,
+)
 from .openai_compat import supports_developer_role
 from .sanitize import sanitize_surrogates
 
@@ -111,6 +118,7 @@ class OpenAICompletionsProvider(BaseProvider):
             api_key=api_key,
             base_url=config.base_url,
             timeout=kon_config.llm.request_timeout_seconds,
+            http_client=make_http_client(),
         )
         self._compat = _detect_compat(
             config.provider or "", config.base_url or "", config.model or ""

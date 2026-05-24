@@ -6,6 +6,10 @@ from ipaddress import ip_address
 from typing import Literal
 from urllib.parse import urlparse
 
+import httpx
+
+from kon import config as kon_config
+
 from ..core.types import Message, StreamPart, ToolDefinition, Usage
 
 DEFAULT_THINKING_LEVELS: list[str] = ["none", "minimal", "low", "medium", "high", "xhigh"]
@@ -46,6 +50,13 @@ def is_local_base_url(base_url: str | None) -> bool:
         return False
 
     return addr.is_loopback or addr.is_private or addr.is_link_local
+
+
+def make_http_client() -> httpx.AsyncClient | None:
+    # Returns None when verify is required so the SDK uses its own default client.
+    if not kon_config.llm.tls.insecure_skip_verify:
+        return None
+    return httpx.AsyncClient(verify=False)
 
 
 def resolve_api_key(

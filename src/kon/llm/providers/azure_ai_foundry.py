@@ -2,7 +2,7 @@ import os
 
 from anthropic import AsyncAnthropic
 
-from ..base import ProviderConfig, get_env_api_key
+from ..base import ProviderConfig, get_env_api_key, make_http_client
 from .anthropic import AnthropicProvider
 
 
@@ -27,4 +27,8 @@ class AzureAIFoundryProvider(AnthropicProvider):
                 "Set AZURE_AI_FOUNDRY_BASE_URL environment variable or pass base_url in config."
             )
 
-        self._client = AsyncAnthropic(api_key=api_key, base_url=base_url)
+        self._client = AsyncAnthropic(
+            api_key=api_key,
+            base_url=base_url,
+            http_client=make_http_client(),
+        )

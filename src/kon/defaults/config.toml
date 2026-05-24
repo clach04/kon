@@ -23,6 +23,11 @@ request_timeout_seconds = 600
 openai_compat = "auto" # "auto", "required", or "none"
 anthropic_compat = "auto" # "auto", "required", or "none"
 
+[llm.tls]
+# Skip TLS verification for LLM HTTP requests. Enables self-signed certs
+# on local providers.
+insecure_skip_verify = false
+
 [llm.system_prompt]
 git_context = true
 content = """You are an expert coding assistant called Kon. You help users by reading, searching, executing commands, editing code, and writing new files.

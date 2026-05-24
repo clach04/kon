@@ -1513,6 +1513,11 @@ def main():
         help="Auth mode for Anthropic-compatible endpoints",
     )
     parser.add_argument(
+        "--insecure-skip-verify",
+        action="store_true",
+        help="Skip TLS verification (e.g. self-signed certs on local providers)",
+    )
+    parser.add_argument(
         "--continue",
         "-c",
         action="store_true",
@@ -1530,6 +1535,9 @@ def main():
         "--extra-tools", help="Comma-separated extra tools to enable (e.g. web_search,web_fetch)"
     )
     args = parser.parse_args()
+
+    if args.insecure_skip_verify:
+        config.llm.tls.insecure_skip_verify = True
 
     extra_tools = (
         [t.strip() for t in args.extra_tools.split(",") if t.strip()] if args.extra_tools else None
