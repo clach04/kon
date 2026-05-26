@@ -404,7 +404,7 @@ class TestBuiltinCommandSkills:
         skill = next((s for s in result.skills if s.name == "init"), None)
         assert skill is not None
         assert skill.register_cmd is True
-        assert skill.cmd_info == "Guided AGENTS.md setup"
+        assert skill.cmd_info == "guided AGENTS.md setup"
         assert skill.bundled is True
         assert skill.path.endswith("kon/builtin_skills/init/SKILL.md")
         assert all("deprecated" in w.message for w in result.warnings)

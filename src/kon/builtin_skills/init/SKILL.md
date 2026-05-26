@@ -2,7 +2,7 @@
 name: init
 description: Create or update AGENTS.md for this repository
 register_cmd: true
-cmd_info: Guided AGENTS.md setup
+cmd_info: guided AGENTS.md setup
 ---
 
 Create or update `AGENTS.md` for this repository.
