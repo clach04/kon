@@ -90,9 +90,7 @@ class AnthropicProvider(BaseProvider):
             )
 
         self._client = AsyncAnthropic(
-            api_key=api_key,
-            base_url=config.base_url,
-            http_client=make_http_client(),
+            api_key=api_key, base_url=config.base_url, http_client=make_http_client()
         )
 
     async def _stream_impl(

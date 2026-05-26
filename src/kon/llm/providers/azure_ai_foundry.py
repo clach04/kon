@@ -28,7 +28,5 @@ class AzureAIFoundryProvider(AnthropicProvider):
             )
 
         self._client = AsyncAnthropic(
-            api_key=api_key,
-            base_url=base_url,
-            http_client=make_http_client(),
+            api_key=api_key, base_url=base_url, http_client=make_http_client()
         )
