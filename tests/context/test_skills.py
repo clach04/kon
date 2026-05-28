@@ -268,7 +268,7 @@ register_cmd: yes
 class TestLoadSkills:
     def test_loads_local_and_global_unique_skills(self, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
-        local_skills_dir = repo / ".kon" / "skills"
+        local_skills_dir = repo / ".agents" / "skills"
         local_skill_dir = local_skills_dir / "local-skill"
         local_skill_dir.mkdir(parents=True)
         (local_skill_dir / "SKILL.md").write_text("""---
@@ -292,11 +292,11 @@ description: Global skill
         result = load_skills(str(repo))
 
         assert {s.name for s in result.skills} == {"local-skill", "global-skill"}
-        assert all("deprecated" in w.message for w in result.warnings)
+        assert result.warnings == []
 
     def test_local_overrides_global_name_collision(self, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
-        local_skill_dir = repo / ".kon" / "skills" / "shared-skill"
+        local_skill_dir = repo / ".agents" / "skills" / "shared-skill"
         local_skill_dir.mkdir(parents=True)
         (local_skill_dir / "SKILL.md").write_text("""---
 name: shared-skill
@@ -324,7 +324,7 @@ description: Global version
         collision = next(w for w in result.warnings if "name collision" in w.message)
         expected = (
             'name collision: "shared-skill" already loaded '
-            "from ~/repo/.kon/skills/shared-skill/SKILL.md"
+            "from ~/repo/.agents/skills/shared-skill/SKILL.md"
         )
         assert collision.message == expected
 
@@ -358,11 +358,11 @@ description: Planning-only mode
         result = load_skills(str(repo))
 
         assert result.skills == []
-        assert all("deprecated" in w.message for w in result.warnings)
+        assert result.warnings == []
 
     def test_invalid_skill_excluded_and_warning_returned(self, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
-        invalid_skill_dir = repo / ".kon" / "skills" / "invalid-skill"
+        invalid_skill_dir = repo / ".agents" / "skills" / "invalid-skill"
         invalid_skill_dir.mkdir(parents=True)
         (invalid_skill_dir / "SKILL.md").write_text("""---
 name: invalid-skill
@@ -380,7 +380,7 @@ name: invalid-skill
 
     def test_uses_directory_name_when_name_missing_in_frontmatter(self, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
-        skill_dir = repo / ".kon" / "skills" / "fallback-name"
+        skill_dir = repo / ".agents" / "skills" / "fallback-name"
         skill_dir.mkdir(parents=True)
         (skill_dir / "SKILL.md").write_text("""---
 description: Uses directory fallback
@@ -394,7 +394,7 @@ description: Uses directory fallback
 
         assert len(result.skills) == 1
         assert result.skills[0].name == "fallback-name"
-        assert all("deprecated" in w.message for w in result.warnings)
+        assert result.warnings == []
 
 
 class TestBuiltinCommandSkills:
@@ -407,7 +407,7 @@ class TestBuiltinCommandSkills:
         assert skill.cmd_info == "guided AGENTS.md setup"
         assert skill.bundled is True
         assert skill.path.endswith("kon/builtin_skills/init/SKILL.md")
-        assert all("deprecated" in w.message for w in result.warnings)
+        assert result.warnings == []
 
 
 class TestBundledSkillPromptRendering:

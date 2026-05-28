@@ -51,7 +51,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--kon-config",
         type=Path,
-        default=Path.home() / ".kon/config.toml",
+        default=Path.home() / ".config" / "kon" / "config.toml",
         help="Kon config file to rewrite during previews.",
     )
     parser.add_argument(

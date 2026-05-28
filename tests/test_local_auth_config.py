@@ -16,7 +16,7 @@ def test_default_local_auth_modes_are_auto(tmp_path, monkeypatch):
 
 def test_local_auth_modes_can_be_overridden(tmp_path, monkeypatch):
     home = tmp_path / "home"
-    config_dir = home / ".kon"
+    config_dir = home / ".config" / "kon"
     config_dir.mkdir(parents=True)
     (config_dir / "config.toml").write_text(
         """

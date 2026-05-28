@@ -16,7 +16,7 @@ def test_notifications_disabled_by_default(tmp_path, monkeypatch):
 
 def test_notifications_can_be_enabled(tmp_path, monkeypatch):
     home = tmp_path / "home"
-    config_dir = home / ".kon"
+    config_dir = home / ".config" / "kon"
     config_dir.mkdir(parents=True)
     (config_dir / "config.toml").write_text(
         """
