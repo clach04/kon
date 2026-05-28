@@ -155,7 +155,7 @@ If you want a coding agent you can read, understand, fork, and adapt without inh
 Kon stores config at:
 
 ```text
-~/.kon/config.toml
+~/.config/kon/config.toml
 ```
 
 It is created automatically on first run, and old schemas are migrated forward automatically when needed.
@@ -236,7 +236,7 @@ Enable them from the CLI:
 kon --extra-tools web_search,web_fetch
 ```
 
-Or in `~/.kon/config.toml`:
+Or in `~/.config/kon/config.toml`:
 
 ```toml
 [tools]
@@ -349,7 +349,7 @@ Kon supports direct shell command execution from the input box using two prefixe
 Kon stores sessions as append-only **JSONL** files in:
 
 ```text
-~/.kon/sessions/
+~/.config/kon/sessions/
 ```
 
 That keeps sessions easy to inspect, archive, and move around.
@@ -409,8 +409,8 @@ Kon loads project guidance from `AGENTS.md` or `CLAUDE.md` files into the system
 
 Load order:
 
-1. `~/.kon/AGENTS.md`
-2. matching ancestor directories from git root (or home) down to the current working directory
+1. `~/.config/kon/AGENTS.md`
+2. matching `AGENTS.md` or `CLAUDE.md` files in ancestor directories from git root (or home) down to the current working directory
 
 Use these files for repo conventions, test commands, code style notes, deployment steps, or anything else you want loaded automatically.
 
@@ -418,8 +418,8 @@ Use these files for repo conventions, test commands, code style notes, deploymen
 
 Skills are reusable instruction packs discovered from:
 
-- project: `.kon/skills/`
-- global: `~/.kon/skills/`
+- project: `.agents/skills/`
+- global: `~/.agents/skills/`
 
 Each skill lives in its own directory with a `SKILL.md` file.
 
@@ -492,7 +492,7 @@ kon --provider deepseek --model deepseek-v4-flash
 
 ### Local models
 
-Kon works well with local models served through an OpenAI-compatible endpoint. For one-off launches, you can force unauthenticated local behavior with `--openai-compat-auth none` or `--anthropic-compat-auth none`. To make that persistent across sessions, set `[llm.auth] openai_compat = "auto"|"none"` and/or `anthropic_compat = "auto"|"none"` in `~/.kon/config.toml`.
+Kon works well with local models served through an OpenAI-compatible endpoint. For one-off launches, you can force unauthenticated local behavior with `--openai-compat-auth none` or `--anthropic-compat-auth none`. To make that persistent across sessions, set `[llm.auth] openai_compat = "auto"|"none"` and/or `anthropic_compat = "auto"|"none"` in `~/.config/kon/config.toml`.
 
 More notes, tested models, and examples live in [docs/local-models.md](docs/local-models.md).
 

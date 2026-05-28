@@ -218,6 +218,18 @@ class TestLoadAgentsFiles:
         assert "2-mid" in result[1].content
         assert "3-leaf" in result[2].content
 
+    def test_ignores_dot_agents_context_files(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("kon.context.agent_mds.get_config_dir", lambda: tmp_path / "config")
+
+        project = tmp_path / "project"
+        (project / ".git").mkdir(parents=True)
+        (project / ".agents").mkdir()
+        (project / ".agents" / "AGENTS.md").write_text("# Ignored rules")
+
+        result = load_agent_mds(str(project))
+
+        assert result == []
+
     def test_empty_when_no_files(self, tmp_path, monkeypatch):
         monkeypatch.setattr("kon.context.agent_mds.get_config_dir", lambda: tmp_path / "config")
 
