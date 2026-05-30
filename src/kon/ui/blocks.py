@@ -144,14 +144,38 @@ class ThinkingBlock(_StreamingMarkdownMixin, Static):
         return self._label
 
     def _format_collapsed(self) -> Text:
-        """Show only the first line with a truncation indicator."""
+        """Show collapsed thinking with configured line count."""
         lines = self._content.strip().split("\n")
-        first_line = strip_markdown_for_collapsed_text(lines[0].strip()) if lines else ""
+        max_lines = self._get_max_lines()
         style = f"{config.ui.colors.dim} italic"
-        text = Text(first_line, style=style)
-        if len(lines) > 1:
-            text.append(f" ... ({len(lines) - 1} more lines)", style=style)
+
+        if max_lines is None:
+            # No truncation — show everything
+            text = Text()
+            for i, line in enumerate(lines):
+                if i > 0:
+                    text.append("\n")
+                text.append(strip_markdown_for_collapsed_text(line.strip()), style=style)
+            return text
+
+        visible = lines[:max_lines]
+        text = Text()
+        for i, line in enumerate(visible):
+            if i > 0:
+                text.append("\n")
+            text.append(strip_markdown_for_collapsed_text(line.strip()), style=style)
+
+        remaining = len(lines) - max_lines
+        if remaining > 0:
+            text.append(f" ... ({remaining} more lines)", style=style)
         return text
+
+    @staticmethod
+    def _get_max_lines() -> int | None:
+        setting = config.ui.thinking_lines
+        if setting == "none":
+            return None
+        return int(setting)
 
     def _streaming_update_label(self, display: Text) -> None:
         self.label.update(display)
@@ -280,7 +304,7 @@ class ToolBlock(Static):
     def _format_header(self, truncate: bool = True) -> Text:
         colors = config.ui.colors
         result = Text()
-        formatted_name = " ".join(word.capitalize() for word in self._name.split("_"))
+        formatted_name = self._name
 
         success_style = Style(color=colors.muted, bold=True)
         icon_style: str | Style = success_style
@@ -291,6 +315,10 @@ class ToolBlock(Static):
         elif self._success is False:
             icon_style = colors.failed
             name_style = colors.failed
+        elif self._success is True and config.ui.colored_tool_badge:
+            badge_style = Style(color=colors.badge.label, bold=True)
+            icon_style = badge_style
+            name_style = badge_style
 
         if self._awaiting_approval:
             result.append(

@@ -17,10 +17,10 @@ def _blend_hex(base: str, overlay: str, overlay_weight: float) -> str:
 def get_styles() -> str:
     colors = config.ui.colors
     approval_bg = _blend_hex(colors.bg, colors.accent, overlay_weight=0.05)
-    shell_bg = _blend_hex(colors.panel_user, colors.success, overlay_weight=0.15)
-    thinking_medium_bg = _blend_hex(colors.panel_user, colors.accent, overlay_weight=0.08)
-    thinking_high_bg = _blend_hex(colors.panel_user, colors.accent, overlay_weight=0.18)
-    thinking_xhigh_bg = _blend_hex(colors.panel_user, colors.badge.label, overlay_weight=0.18)
+    shell_bg = _blend_hex(colors.editor, colors.success, overlay_weight=0.15)
+    thinking_medium_bg = _blend_hex(colors.editor, colors.accent, overlay_weight=0.08)
+    thinking_high_bg = _blend_hex(colors.editor, colors.accent, overlay_weight=0.18)
+    thinking_xhigh_bg = _blend_hex(colors.editor, colors.badge.label, overlay_weight=0.18)
 
     return f"""
 Screen {{
@@ -40,13 +40,12 @@ Screen {{
     color: {colors.fg};
 }}
 
-/* Thinking block - dim italic with left border */
+/* Thinking block - dim italic */
 .thinking-block {{
     color: {colors.dim};
     text-style: italic;
     padding: 0 1 0 1;
-    margin: 1 0 0 1;
-    border-left: outer {colors.border};
+    margin: 1 0 0 0;
 }}
 
 .thinking-block.-hidden {{
@@ -82,11 +81,11 @@ Screen {{
 .user-block {{
     padding: 1 1;
     margin: 1 0 0 0;
-    background: {colors.panel_user};
+    background: {colors.editor};
 }}
 
 .user-block.skill-trigger-message {{
-    background: {colors.panel_user};
+    background: {colors.editor};
 }}
 
 /* Update available message */
@@ -228,9 +227,9 @@ Screen {{
 
 /* Input area */
 #input-box {{
-    background: {colors.panel_user};
-    border-top: solid {colors.panel_user};
-    border-bottom: solid {colors.panel_user};
+    background: {colors.editor};
+    border-top: solid {colors.editor};
+    border-bottom: solid {colors.editor};
     border-title-color: {colors.dim};
     border-subtitle-color: {colors.dim};
 }}
@@ -243,9 +242,9 @@ Screen {{
 #input-box.-thinking-none,
 #input-box.-thinking-minimal,
 #input-box.-thinking-low {{
-    background: {colors.panel_user};
-    border-top: solid {colors.panel_user};
-    border-bottom: solid {colors.panel_user};
+    background: {colors.editor};
+    border-top: solid {colors.editor};
+    border-bottom: solid {colors.editor};
 }}
 
 #input-box.-thinking-medium {{

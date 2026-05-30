@@ -586,7 +586,8 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
         if self._selection_mode is not None:
             selection_mode = self._selection_mode
             keeps_info_bar_displaced = selection_mode == SelectionMode.SETTINGS or (
-                selection_mode in (SelectionMode.THEME, SelectionMode.THINKING)
+                selection_mode
+                in (SelectionMode.THEME, SelectionMode.THINKING, SelectionMode.THINKING_LINES)
                 and self._settings_active
             )
             with self.batch_update():
@@ -622,6 +623,12 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
                     self._select_permission_mode(item.value)
                 case SelectionMode.THINKING:
                     self._select_thinking_level(item.value)
+                    if self._settings_active:
+                        self._settings_active = False
+                        self.call_later(show_settings_picker_and_restore)
+                        return
+                case SelectionMode.THINKING_LINES:
+                    self._select_thinking_lines(item.value)
                     if self._settings_active:
                         self._settings_active = False
                         self.call_later(show_settings_picker_and_restore)

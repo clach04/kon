@@ -8,11 +8,13 @@ from kon.config import (
     get_config_dir,
     reload_config,
     reset_config,
+    set_colored_tool_badge,
     set_config,
     set_notifications_enabled,
     set_permissions_mode,
     set_show_welcome_shortcuts,
     set_theme,
+    set_thinking_lines,
     update_available_binaries,
 )
 from kon.context._xml import escape_xml
@@ -39,10 +41,12 @@ __all__ = [
     "get_config_dir",
     "reload_config",
     "reset_config",
+    "set_colored_tool_badge",
     "set_config",
     "set_notifications_enabled",
     "set_permissions_mode",
     "set_show_welcome_shortcuts",
     "set_theme",
+    "set_thinking_lines",
     "update_available_binaries",
 ]

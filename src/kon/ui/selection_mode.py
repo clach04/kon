@@ -9,6 +9,8 @@ class SelectionMode(StrEnum):
     LOGOUT = "logout"
     PERMISSIONS = "permissions"
     THINKING = "thinking"
+    THINKING_LINES = "thinking_lines"
+    COLORED_TOOL_BADGE = "colored_tool_badge"
     NOTIFICATIONS = "notifications"
     SETTINGS = "settings"
     TREE = "tree"

@@ -7,12 +7,21 @@ from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
 from kon import (
     config,
+    set_colored_tool_badge,
     set_notifications_enabled,
     set_permissions_mode,
     set_show_welcome_shortcuts,
     set_theme,
+    set_thinking_lines,
 )
-from kon.config import NOTIFICATION_MODES, PERMISSION_MODES, NotificationMode, PermissionMode
+from kon.config import (
+    NOTIFICATION_MODES,
+    PERMISSION_MODES,
+    THINKING_LINES_OPTIONS,
+    NotificationMode,
+    PermissionMode,
+    ThinkingLinesOption,
+)
 
 from ..llm import (
     clear_openai_credentials,
@@ -331,6 +340,28 @@ class CommandsMixin:
         chat = self.query_one("#chat-log", ChatLog)
         chat.show_status(f"Thinking level changed to {level}")
 
+    def _show_thinking_lines_picker(self) -> None:
+        descriptions: dict[ThinkingLinesOption, str] = {
+            "1": "show 1 line",
+            "2": "show 2 lines",
+            "3": "show 3 lines",
+            "4": "show 4 lines",
+            "5": "show 5 lines",
+            "none": "no truncation",
+        }
+        items = self._build_choice_items(
+            THINKING_LINES_OPTIONS, config.ui.thinking_lines, descriptions
+        )
+        self._show_selection_picker(items, SelectionMode.THINKING_LINES)
+
+    def _select_thinking_lines(self, lines: ThinkingLinesOption) -> None:
+        set_thinking_lines(lines)
+        chat = self.query_one("#chat-log", ChatLog)
+        label = (
+            "no truncation" if lines == "none" else f"{lines} line{'s' if lines != '1' else ''}"
+        )
+        chat.show_status(f"Thinking lines changed to {label}")
+
     def _handle_notifications_command(self, args: str) -> None:
         current: NotificationMode = "on" if config.notifications.enabled else "off"
         descriptions: dict[NotificationMode, str] = {
@@ -364,7 +395,14 @@ class CommandsMixin:
             thinking_level = "off"
 
         shortcut_status = "on" if config.ui.show_welcome_shortcuts else "off"
+        thinking_lines_status = config.ui.thinking_lines
+        colored_badge_status = "on" if config.ui.colored_tool_badge else "off"
         return [
+            ListItem(
+                value="colored-tool-badge",
+                label="colored-tool-badge",
+                description=colored_badge_status,
+            ),
             ListItem(
                 value="notifications", label="notifications", description=notification_status
             ),
@@ -374,6 +412,9 @@ class CommandsMixin:
             ),
             ListItem(value="themes", label="themes", description=config.ui.theme),
             ListItem(value="thinking", label="thinking", description=thinking_level),
+            ListItem(
+                value="thinking-lines", label="thinking-lines", description=thinking_lines_status
+            ),
         ]
 
     def _show_settings_picker(self, selected_value: str | None = None) -> None:
@@ -428,6 +469,20 @@ class CommandsMixin:
                 return "closed"
             self._settings_active = True
             self._handle_thinking_command("")
+            return "reopened-picker"
+
+        elif item_value == "thinking-lines":
+            self._settings_active = True
+            self._show_thinking_lines_picker()
+            return "reopened-picker"
+
+        elif item_value == "colored-tool-badge":
+            badge_current = config.ui.colored_tool_badge
+            set_colored_tool_badge(not badge_current)
+            mode = "on" if not badge_current else "off"
+            chat = self.query_one("#chat-log", ChatLog)
+            chat.show_status(f"Colored tool badge turned {mode}")
+            self._show_settings_picker(selected_value=item_value)
             return "reopened-picker"
 
         return "closed"

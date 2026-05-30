@@ -45,11 +45,19 @@ class MetaConfig(BaseModel):
     config_version: int = CURRENT_CONFIG_VERSION
 
 
+ThinkingLinesOption = Literal["1", "2", "3", "4", "5", "none"]
+THINKING_LINES_OPTIONS: tuple[ThinkingLinesOption, ...] = get_args(ThinkingLinesOption)
+
+
 class UIConfig(BaseModel):
     theme: str = "gruvbox-dark"
     # When true, finalized thinking blocks are collapsed to a single line summary.
     # Set to false to always show the full thinking content.
     collapse_thinking: bool = True
+    # Number of lines to show when thinking is collapsed. "none" means no truncation.
+    thinking_lines: ThinkingLinesOption = "1"
+    # When true, tool icon and name use badge label color on success.
+    colored_tool_badge: bool = True
     # Show the list of keyboard shortcuts in the welcome section on launch.
     # Set to false to hide the shortcuts panel.
     show_welcome_shortcuts: bool = True
@@ -625,6 +633,38 @@ def set_permissions_mode(mode: PermissionMode) -> Config:
         data["permissions"] = perms
 
     perms["mode"] = mode
+    _set_config_version(data)
+
+    _atomic_write_text(config_file, _serialize_config_toml(data))
+    return reload_config()
+
+
+def set_thinking_lines(lines: ThinkingLinesOption) -> Config:
+    config_file = _ensure_config_file()
+    data = _read_config_data(config_file)
+
+    ui = data.get("ui")
+    if not isinstance(ui, dict):
+        ui = {}
+        data["ui"] = ui
+
+    ui["thinking_lines"] = lines
+    _set_config_version(data)
+
+    _atomic_write_text(config_file, _serialize_config_toml(data))
+    return reload_config()
+
+
+def set_colored_tool_badge(enabled: bool) -> Config:
+    config_file = _ensure_config_file()
+    data = _read_config_data(config_file)
+
+    ui = data.get("ui")
+    if not isinstance(ui, dict):
+        ui = {}
+        data["ui"] = ui
+
+    ui["colored_tool_badge"] = enabled
     _set_config_version(data)
 
     _atomic_write_text(config_file, _serialize_config_toml(data))
