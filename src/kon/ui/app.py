@@ -55,7 +55,13 @@ from ..session import Session
 from ..tools import DEFAULT_TOOLS, EXTRA_TOOLS, get_tool, get_tools
 from ..tools.bash import BashParams, BashTool
 from ..update_check import get_newer_pypi_version
-from .autocomplete import DEFAULT_COMMANDS, FilePathProvider, SlashCommand, SlashCommandProvider
+from .autocomplete import (
+    DEFAULT_COMMANDS,
+    FilePathProvider,
+    PullRequestProvider,
+    SlashCommand,
+    SlashCommandProvider,
+)
 from .blocks import HandoffLinkBlock, LaunchWarning
 from .chat import ChatLog
 from .commands import CommandsMixin
@@ -654,8 +660,8 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
 
         if isinstance(provider, SlashCommandProvider):
             input_box.apply_slash_command(item)
-        elif isinstance(provider, FilePathProvider):
-            input_box.apply_file_completion(item)
+        elif isinstance(provider, FilePathProvider | PullRequestProvider):
+            input_box.apply_provider_completion(item)
 
         input_box.set_completing(False)
         self._restore_chat_scroll_after_refresh(was_at_bottom)

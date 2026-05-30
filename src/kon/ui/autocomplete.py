@@ -11,6 +11,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 
+from kon import gh_cli
+
 from .floating_list import ListItem
 
 
@@ -216,6 +218,67 @@ class SlashCommandProvider(AutocompleteProvider):
         new_cursor = prefix_start + len(cmd.name) + 2  # +2 for "/" and space
 
         return (new_text, new_cursor)
+
+
+class PullRequestProvider(AutocompleteProvider):
+    def __init__(self, cwd: str = ".") -> None:
+        self._cwd = cwd
+        self._matcher = FuzzyMatcher(case_sensitive=False)
+
+    def set_cwd(self, cwd: str) -> None:
+        self._cwd = cwd
+
+    @property
+    def trigger_chars(self) -> set[str]:
+        return {"#"}
+
+    def _extract_token(self, text: str, cursor_col: int) -> tuple[str, int] | None:
+        text_before = text[:cursor_col]
+        for i in range(len(text_before) - 1, -1, -1):
+            if text_before[i] == "#":
+                if i == 0 or text_before[i - 1].isspace():
+                    return text_before[i:], i
+                break
+            if text_before[i].isspace():
+                break
+        return None
+
+    def should_trigger(self, text: str, cursor_col: int) -> bool:
+        return gh_cli.is_available() and self._extract_token(text, cursor_col) is not None
+
+    def get_suggestions(self, text: str, cursor_col: int) -> CompletionResult | None:
+        extracted = self._extract_token(text, cursor_col)
+        if extracted is None:
+            return None
+
+        token, token_start = extracted
+        query = token[1:]
+        scored = []
+        for pr in gh_cli.list_pull_requests(self._cwd):
+            label = f"#{pr.number} {pr.branch}"
+            haystack = f"{label} {pr.title}"
+            score, _ = self._matcher.match(query, haystack)
+            if score > 0 or not query:
+                scored.append((score, pr, label))
+        scored.sort(key=lambda item: (-item[0], item[1].number))
+
+        items = [
+            ListItem(value=pr, label=label, description=pr.title) for _, pr, label in scored[:20]
+        ]
+        if not items:
+            return None
+        return CompletionResult(items=items, prefix=token, replace_start=token_start)
+
+    def apply_completion(
+        self, text: str, cursor_col: int, item: ListItem, prefix: str
+    ) -> tuple[str, int]:
+        pr: gh_cli.PullRequest = item.value
+        text_before = text[:cursor_col]
+        prefix_start = cursor_col - len(prefix)
+        text_after = text[cursor_col:]
+        replacement = pr.chat_reference()
+        new_text = text_before[:prefix_start] + replacement + " " + text_after
+        return new_text, prefix_start + len(replacement) + 1
 
 
 class FilePathProvider(AutocompleteProvider):

@@ -154,6 +154,10 @@ class _BinariesConfig:
     def fd(self) -> bool:
         return "fd" in self._binaries
 
+    @property
+    def gh(self) -> bool:
+        return "gh" in self._binaries
+
 
 class Config:
     def __init__(self, data: dict[str, Any]) -> None:
@@ -268,7 +272,7 @@ def consume_config_warnings() -> list[str]:
 
 
 def _detect_available_binaries() -> set[str]:
-    binaries = {"rg", "fd"}
+    binaries = {"rg", "fd", "gh"}
     available = set()
     bin_dir = get_config_dir() / "bin"
 

@@ -8,7 +8,12 @@ import pytest
 from kon.runtime import ConversationRuntime
 from kon.session import SessionInfo
 from kon.ui.app import Kon
-from kon.ui.autocomplete import FilePathProvider, SlashCommand, SlashCommandProvider
+from kon.ui.autocomplete import (
+    FilePathProvider,
+    PullRequestProvider,
+    SlashCommand,
+    SlashCommandProvider,
+)
 from kon.ui.floating_list import FloatingList, ListItem
 from kon.ui.input import InputBox
 from kon.ui.selection_mode import SelectionMode
@@ -88,12 +93,15 @@ class FakeCompletionList:
 class FakeInputBox:
     def __init__(self) -> None:
         self.is_tab_completing = False
-        self.active_provider: SlashCommandProvider | FilePathProvider | None = None
+        self.active_provider: (
+            SlashCommandProvider | FilePathProvider | PullRequestProvider | None
+        ) = None
         self.completing: bool | None = None
         self.submitted = False
         self.tab_completed_items: list[ListItem] = []
         self.slash_completed_items: list[ListItem] = []
         self.file_completed_items: list[ListItem] = []
+        self.provider_completed_items: list[ListItem] = []
         self.cleared = False
         self.autocomplete_enabled: bool | None = None
 
@@ -111,6 +119,9 @@ class FakeInputBox:
 
     def apply_file_completion(self, item: ListItem) -> None:
         self.file_completed_items.append(item)
+
+    def apply_provider_completion(self, item: ListItem) -> None:
+        self.provider_completed_items.append(item)
 
     def clear(self) -> None:
         self.cleared = True
@@ -364,7 +375,7 @@ def test_completion_select_terminal_paths_restore_info_bar(case: str) -> None:
         assert app.input_box.slash_completed_items == [item]
         assert app.input_box.completing is False
     elif case == "file":
-        assert app.input_box.file_completed_items == [item]
+        assert app.input_box.provider_completed_items == [item]
         assert app.input_box.completing is False
 
 

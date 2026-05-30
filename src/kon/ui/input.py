@@ -22,6 +22,7 @@ from .autocomplete import (
     DEFAULT_COMMANDS,
     AutocompleteProvider,
     FilePathProvider,
+    PullRequestProvider,
     SlashCommand,
     SlashCommandProvider,
 )
@@ -173,7 +174,12 @@ class InputBox(Vertical):
         # Autocomplete providers
         self._slash_provider = SlashCommandProvider(DEFAULT_COMMANDS.copy())
         self._file_provider = FilePathProvider(self._cwd)
-        self._providers: list[AutocompleteProvider] = [self._slash_provider, self._file_provider]
+        self._pr_provider = PullRequestProvider(self._cwd)
+        self._providers: list[AutocompleteProvider] = [
+            self._slash_provider,
+            self._file_provider,
+            self._pr_provider,
+        ]
 
         # Active completion state (the list itself is external)
         self._active_provider: AutocompleteProvider | None = None
@@ -258,6 +264,7 @@ class InputBox(Vertical):
     def set_cwd(self, cwd: str) -> None:
         self._cwd = cwd
         self._file_provider.set_cwd(cwd)
+        self._pr_provider.set_cwd(cwd)
         self._path_complete.clear_cache()
 
     def set_autocomplete_enabled(self, enabled: bool) -> None:
@@ -620,14 +627,15 @@ class InputBox(Vertical):
         textarea.clear()
         textarea.insert(new_text)
 
-    def apply_file_completion(self, item: ListItem) -> None:
+    def apply_provider_completion(self, item: ListItem) -> None:
+        provider = self._active_provider
+        if provider is None:
+            return
+
         textarea = self.query_one("#input-textarea", TextArea)
         text = textarea.text
         cursor_col = self._cursor_offset(text, textarea.selection.end)
-
-        new_text, _ = self._file_provider.apply_completion(
-            text, cursor_col, item, self._completion_prefix
-        )
+        new_text, _ = provider.apply_completion(text, cursor_col, item, self._completion_prefix)
 
         self._is_completing = False
         self._active_provider = None
@@ -635,6 +643,9 @@ class InputBox(Vertical):
         self._suppress_autocomplete = 2  # clear() + insert() = 2 events
         textarea.clear()
         textarea.insert(new_text)
+
+    def apply_file_completion(self, item: ListItem) -> None:
+        self.apply_provider_completion(item)
 
     def apply_tab_path_completion(self, item: ListItem) -> None:
         """Apply a tab path completion selection."""
