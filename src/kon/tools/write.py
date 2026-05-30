@@ -32,14 +32,19 @@ class WriteTool(BaseTool):
         return shorten_path(params.path)
 
     def format_preview(self, params: WriteParams) -> str | None:
+        from kon.diff_display import DIFF_BG_PAD_MARKER, blend_hex
+
         colors = config.ui.colors
+        bg_added = blend_hex(colors.diff_added, colors.bg)
+
         lines = params.content.splitlines()
         colored = []
         for line in lines[:20]:
             escaped = line.replace("[", "\\[")
-            colored.append(f"[{colors.diff_added}]+{escaped}[/{colors.diff_added}]")
+            content = f"+ {escaped}"
+            colored.append(f"[{colors.diff_added} on {bg_added}]{content}{DIFF_BG_PAD_MARKER}[/]")
         if len(lines) > 20:
-            colored.append(f"[dim]... ({len(lines) - 20} more lines)[/dim]")
+            colored.append(f"[dim]  \u22ef {len(lines) - 20} more lines \u22ef[/dim]")
         return "\n".join(colored)
 
     async def execute(

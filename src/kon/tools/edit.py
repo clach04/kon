@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from rich.markup import escape
 
 from kon import config
+from kon.diff_display import DIFF_BG_PAD_MARKER, blend_hex
 
 from ..core.types import FileChanges
 from ._tool_utils import shorten_path
@@ -26,6 +27,10 @@ class EditParams(BaseModel):
     )
 
 
+def _ellipsis(line_num_width: int, skipped: int) -> str:
+    return f" {''.rjust(line_num_width)} \u22ef {skipped} lines \u22ef"  # ⋯ N lines ⋯
+
+
 def generate_diff(
     old_content: str, new_content: str, context_lines: int = CONTEXT_LINES
 ) -> tuple[str, int, int]:
@@ -36,10 +41,10 @@ def generate_diff(
         tuple: (diff_string, added_count, removed_count)
 
     Format:
-        " 42 context line"      (space prefix = context)
-        "-43 removed line"      (minus prefix = removed)
-        "+43 added line"        (plus prefix = added)
-        "    ..."               (ellipsis = skipped lines)
+        " 42   context line"    (space, num, three spaces = empty change marker)
+        " 42 - removed line"    (space, num, space-minus-space = removed)
+        " 42 + added line"      (space, num, space-plus-space = added)
+        "    ⋯ N lines ⋯"       (ellipsis = skipped lines with count)
     """
     old_lines = old_content.splitlines()
     new_lines = new_content.splitlines()
@@ -50,86 +55,105 @@ def generate_diff(
     max_line_num = max(len(old_lines), len(new_lines))
     line_num_width = len(str(max_line_num))
 
+    def _num(n: int) -> str:
+        return str(n).rjust(line_num_width)
+
     output: list[str] = []
     added, removed = 0, 0
     last_was_change = False
 
     for i, (tag, i1, i2, j1, j2) in enumerate(opcodes):
         if tag == "equal":
-            # Context lines - only show around changes
             equal_lines = old_lines[i1:i2]
             next_is_change = i < len(opcodes) - 1 and opcodes[i + 1][0] != "equal"
 
             if last_was_change or next_is_change:
-                # Both sides need context - show trailing from prev change and leading to next
                 if last_was_change and next_is_change:
                     if len(equal_lines) > context_lines * 2:
-                        # Show first N lines (trailing context from prev change)
                         for idx, line in enumerate(equal_lines[:context_lines]):
                             line_num = i1 + idx + 1
-                            output.append(f" {str(line_num).rjust(line_num_width)} {line}")
-                        # Add ellipsis
-                        output.append(f" {''.rjust(line_num_width)} ...")
-                        # Show last N lines (leading context to next change)
+                            output.append(f" {_num(line_num)}   {line}")
+                        skipped = len(equal_lines) - context_lines * 2
+                        output.append(_ellipsis(line_num_width, skipped))
                         for idx, line in enumerate(equal_lines[-context_lines:]):
                             line_num = i1 + len(equal_lines) - context_lines + idx + 1
-                            output.append(f" {str(line_num).rjust(line_num_width)} {line}")
+                            output.append(f" {_num(line_num)}   {line}")
                     else:
-                        # Show all lines
                         for idx, line in enumerate(equal_lines):
                             line_num = i1 + idx + 1
-                            output.append(f" {str(line_num).rjust(line_num_width)} {line}")
+                            output.append(f" {_num(line_num)}   {line}")
                 elif last_was_change:
-                    # Only trailing context from prev change
                     if len(equal_lines) > context_lines:
                         for idx, line in enumerate(equal_lines[:context_lines]):
                             line_num = i1 + idx + 1
-                            output.append(f" {str(line_num).rjust(line_num_width)} {line}")
-                        output.append(f" {''.rjust(line_num_width)} ...")
+                            output.append(f" {_num(line_num)}   {line}")
+                        skipped = len(equal_lines) - context_lines
+                        output.append(_ellipsis(line_num_width, skipped))
                     else:
                         for idx, line in enumerate(equal_lines):
                             line_num = i1 + idx + 1
-                            output.append(f" {str(line_num).rjust(line_num_width)} {line}")
+                            output.append(f" {_num(line_num)}   {line}")
                 else:
-                    # Only leading context to next change
                     if len(equal_lines) > context_lines:
-                        output.append(f" {''.rjust(line_num_width)} ...")
+                        skipped = len(equal_lines) - context_lines
+                        output.append(_ellipsis(line_num_width, skipped))
                         for idx, line in enumerate(equal_lines[-context_lines:]):
                             line_num = i1 + len(equal_lines) - context_lines + idx + 1
-                            output.append(f" {str(line_num).rjust(line_num_width)} {line}")
+                            output.append(f" {_num(line_num)}   {line}")
                     else:
                         for idx, line in enumerate(equal_lines):
                             line_num = i1 + idx + 1
-                            output.append(f" {str(line_num).rjust(line_num_width)} {line}")
+                            output.append(f" {_num(line_num)}   {line}")
 
             last_was_change = False
 
         elif tag == "replace":
             for idx, line in enumerate(old_lines[i1:i2]):
                 line_num = i1 + idx + 1
-                output.append(f"-{str(line_num).rjust(line_num_width)} {line}")
+                output.append(f" {_num(line_num)} - {line}")
                 removed += 1
             for idx, line in enumerate(new_lines[j1:j2]):
                 line_num = j1 + idx + 1
-                output.append(f"+{str(line_num).rjust(line_num_width)} {line}")
+                output.append(f" {_num(line_num)} + {line}")
                 added += 1
             last_was_change = True
 
         elif tag == "delete":
             for idx, line in enumerate(old_lines[i1:i2]):
                 line_num = i1 + idx + 1
-                output.append(f"-{str(line_num).rjust(line_num_width)} {line}")
+                output.append(f" {_num(line_num)} - {line}")
                 removed += 1
             last_was_change = True
 
         elif tag == "insert":
             for idx, line in enumerate(new_lines[j1:j2]):
                 line_num = j1 + idx + 1
-                output.append(f"+{str(line_num).rjust(line_num_width)} {line}")
+                output.append(f" {_num(line_num)} + {line}")
                 added += 1
             last_was_change = True
 
     return "\n".join(output), added, removed
+
+
+def _parse_diff_line(line: str) -> tuple[str, str, str] | None:
+    """Parse a formatted diff line into (line_number_part, sign, content_part)."""
+    num_start = next((i for i, char in enumerate(line) if char.isdigit()), -1)
+    if num_start == -1:
+        return None
+
+    num_end = num_start
+    while num_end < len(line) and line[num_end].isdigit():
+        num_end += 1
+
+    sign_index = num_end + 1
+    if sign_index >= len(line):
+        return None
+
+    # Includes leading padding and the separator space after the line number.
+    line_number_part = line[:sign_index]
+    sign = line[sign_index]
+    content_part = line[sign_index + 1 :]
+    return line_number_part, sign, content_part
 
 
 def format_diff_display(diff: str) -> str:
@@ -137,19 +161,36 @@ def format_diff_display(diff: str) -> str:
     lines = diff.split("\n")
     formatted = []
 
+    bg_added = blend_hex(colors.diff_added, colors.bg)
+    bg_removed = blend_hex(colors.diff_removed, colors.bg)
+
     for line in lines:
         if not line:
             continue
 
-        truncated = line[:200] + "..." if len(line) > 203 else line
-        escaped = escape(truncated)
+        truncated = line[:200] + "\u2026" if len(line) > 203 else line  # … ellipsis
+        parsed = _parse_diff_line(truncated)
 
-        if line.startswith("-"):
-            formatted.append(f"[{colors.diff_removed}]{escaped}[/{colors.diff_removed}]")
-        elif line.startswith("+"):
-            formatted.append(f"[{colors.diff_added}]{escaped}[/{colors.diff_added}]")
+        if parsed and parsed[1] == "-":
+            line_num, sign, content_part = parsed
+            content = (
+                f"  [{colors.dim}]{escape(line_num)}[/{colors.dim}]"
+                f"[{colors.diff_removed}]{sign}{escape(content_part)}[/{colors.diff_removed}]"
+            )
+            formatted.append(f"[on {bg_removed}]{content}{DIFF_BG_PAD_MARKER}[/]")
+        elif parsed and parsed[1] == "+":
+            line_num, sign, content_part = parsed
+            content = (
+                f"  [{colors.dim}]{escape(line_num)}[/{colors.dim}]"
+                f"[{colors.diff_added}]{sign}{escape(content_part)}[/{colors.diff_added}]"
+            )
+            formatted.append(f"[on {bg_added}]{content}{DIFF_BG_PAD_MARKER}[/]")
+        elif "\u22ef" in line:
+            escaped = escape(truncated)
+            formatted.append(f"[{colors.dim}]{escaped}[/{colors.dim}]")
         else:
-            formatted.append(f"[dim]{escaped}[/dim]")
+            escaped = escape(truncated)
+            formatted.append(f"[{colors.dim}]  {escaped}[/{colors.dim}]")
 
     return "\n".join(formatted)
 
@@ -198,6 +239,11 @@ class EditTool(BaseTool):
         diff, added, removed = generate_diff(content, new_content)
         diff_display = format_diff_display(diff)
 
+        # Full diff for expanded view (no context truncation)
+        total_lines = max(content.count("\n"), new_content.count("\n")) + 1
+        diff_full, _, _ = generate_diff(content, new_content, context_lines=total_lines)
+        diff_full_display = format_diff_display(diff_full)
+
         colors = config.ui.colors
         result = f"Updated {file_path} +{added} -{removed}"
         ui_summary = (
@@ -210,5 +256,6 @@ class EditTool(BaseTool):
             result=result,
             ui_summary=ui_summary,
             ui_details=diff_display,
+            ui_details_full=diff_full_display,
             file_changes=FileChanges(path=str(file_path), added=added, removed=removed),
         )

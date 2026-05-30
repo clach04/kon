@@ -11,6 +11,7 @@ from textual.widgets import Label, Static
 
 from kon import config
 from kon.core.types import ImageContent
+from kon.diff_display import DIFF_BG_PAD_MARKER
 from kon.permissions import ApprovalResponse
 
 from .formatting import format_bash_command, format_markdown, strip_markdown_for_collapsed_text
@@ -380,6 +381,33 @@ class ToolBlock(Static):
 
         return text
 
+    def _pad_diff_backgrounds(self, text: Text, width: int) -> Text:
+        if DIFF_BG_PAD_MARKER not in text.plain or width <= 0:
+            return text
+
+        result = Text()
+        lines = text.split("\n", allow_blank=True)
+        for index, line in enumerate(lines):
+            marker_pos = line.plain.find(DIFF_BG_PAD_MARKER)
+            if marker_pos != -1:
+                line = line.copy()
+                marker_end = marker_pos + len(DIFF_BG_PAD_MARKER)
+                marker_spans = [span for span in line.spans if span.start <= marker_pos < span.end]
+                marker_style = marker_spans[0].style if marker_spans else None
+                line.plain = line.plain[:marker_pos] + line.plain[marker_end:]
+                line.spans = [
+                    span
+                    for span in line.spans
+                    if not (span.start >= marker_pos and span.end <= marker_end)
+                ]
+                padding = max(0, width - len(line.plain))
+                if padding:
+                    line.append(" " * padding, style=marker_style)
+            if index > 0:
+                result.append("\n")
+            result.append_text(line)
+        return result
+
     def _set_state(self, success: bool | None) -> None:
         self.remove_class("-pending", "-success", "-error", "-approval")
         if success is None:
@@ -490,6 +518,11 @@ class ToolBlock(Static):
         self._expanded = expanded
         self._render_result_output()
 
+    def on_resize(self, event: events.Resize) -> None:
+        del event
+        if self._ui_details or self._ui_details_full:
+            self._render_result_output()
+
     def _render_result_output(self) -> None:
         output = self.query_one("#tool-output", Label)
         ui_details = (
@@ -499,6 +532,7 @@ class ToolBlock(Static):
             rendered = (
                 self._render_markup_safe(ui_details) if self._result_markup else Text(ui_details)
             )
+            rendered = self._pad_diff_backgrounds(rendered, output.size.width or self.size.width)
             # Detail blocks need a 1-line gap; drop compact spacing that was
             # applied before we knew this tool would have output.
             self.remove_class("-compact")
