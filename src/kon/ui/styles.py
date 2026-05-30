@@ -150,6 +150,11 @@ Screen {{
     padding: 0 0 0 2;
 }}
 
+#tool-output.-diff-output {{
+    text-wrap: nowrap;
+    text-overflow: clip;
+}}
+
 .tool-block.-with-details {{
     padding: 0 1;
 }}

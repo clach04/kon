@@ -532,6 +532,7 @@ class ToolBlock(Static):
             rendered = (
                 self._render_markup_safe(ui_details) if self._result_markup else Text(ui_details)
             )
+            is_diff_output = DIFF_BG_PAD_MARKER in rendered.plain
             rendered = self._pad_diff_backgrounds(rendered, output.size.width or self.size.width)
             # Detail blocks need a 1-line gap; drop compact spacing that was
             # applied before we knew this tool would have output.
@@ -539,6 +540,10 @@ class ToolBlock(Static):
             self.add_class("-with-details")
             output.remove_class("-hidden")
             output.remove_class("-details")
+            if is_diff_output:
+                output.add_class("-diff-output")
+            else:
+                output.remove_class("-diff-output")
             output.update(rendered)
         elif self._images:
             image_count = len(self._images)
@@ -548,11 +553,13 @@ class ToolBlock(Static):
             self.add_class("-with-details")
             output.remove_class("-hidden")
             output.remove_class("-details")
+            output.remove_class("-diff-output")
             output.update(rendered)
         else:
             output.update(Text(""))
             self.remove_class("-with-details")
             output.remove_class("-details")
+            output.remove_class("-diff-output")
             output.add_class("-hidden")
 
 

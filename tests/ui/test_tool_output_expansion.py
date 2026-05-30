@@ -4,12 +4,16 @@ from textual.app import App, ComposeResult
 from textual.widgets import Label
 
 from kon.core.types import ImageContent
+from kon.diff_display import DIFF_BG_PAD_MARKER
 from kon.ui.blocks import ToolBlock
 from kon.ui.chat import ChatLog
+from kon.ui.styles import get_styles
 from kon.ui.tool_output import format_expand_hint, truncate_tool_output_text
 
 
 class ToolExpansionTestApp(App):
+    CSS = get_styles()
+
     def compose(self) -> ComposeResult:
         yield ChatLog(id="chat-log")
 
@@ -66,6 +70,38 @@ async def test_start_tool_uses_expanded_state_before_mount():
 
         assert block._expanded is True
         assert block.query_one("#tool-output", Label)
+
+
+@pytest.mark.asyncio
+async def test_diff_tool_output_is_clipped_instead_of_wrapped():
+    async with ToolExpansionTestApp().run_test() as pilot:
+        chat = pilot.app.query_one("#chat-log", ChatLog)
+        block = chat.start_tool("edit", "tool-1", "~/file.py")
+        await pilot.pause()
+
+        chat.set_tool_result(
+            "tool-1", None, f"[on #123456]+ long line{DIFF_BG_PAD_MARKER}[/]", True
+        )
+        await pilot.pause()
+
+        output = block.query_one("#tool-output", Label)
+        assert output.has_class("-diff-output")
+        assert output.styles.text_wrap == "nowrap"
+        assert output.styles.text_overflow == "clip"
+
+
+@pytest.mark.asyncio
+async def test_non_diff_tool_output_keeps_wrapping():
+    async with ToolExpansionTestApp().run_test() as pilot:
+        chat = pilot.app.query_one("#chat-log", ChatLog)
+        block = chat.start_tool("bash", "tool-1", "cmd")
+        await pilot.pause()
+
+        chat.set_tool_result("tool-1", None, "plain output", True)
+        await pilot.pause()
+
+        output = block.query_one("#tool-output", Label)
+        assert not output.has_class("-diff-output")
 
 
 @pytest.mark.asyncio
