@@ -61,14 +61,14 @@ def test_format_provider_error_falls_back_for_empty_message():
 
 def test_resolve_websocket_url_uses_ws_scheme_and_codex_responses_path():
     provider = OpenAICodexResponsesProvider(
-        ProviderConfig(base_url="https://chatgpt.com/backend-api", model="gpt-5.4")
+        ProviderConfig(base_url="https://chatgpt.com/backend-api", model="gpt-5.5")
     )
     assert provider._resolve_websocket_url() == "wss://chatgpt.com/backend-api/codex/responses"
 
 
 def test_websocket_headers_use_beta_and_request_id():
     provider = OpenAICodexResponsesProvider(
-        ProviderConfig(session_id="session-123", model="gpt-5.4")
+        ProviderConfig(session_id="session-123", model="gpt-5.5")
     )
     headers = provider._build_websocket_headers("token", "account")
     assert headers["OpenAI-Beta"] == "responses_websockets=2026-02-06"
@@ -95,7 +95,7 @@ def test_websocket_connect_headers_strip_openai_beta():
 def test_request_body_matches_pi_codex_defaults_and_clamps_cache_key():
     long_session_id = "x" * 80
     provider = OpenAICodexResponsesProvider(
-        ProviderConfig(session_id=long_session_id, model="gpt-5.4", thinking_level="minimal")
+        ProviderConfig(session_id=long_session_id, model="gpt-5.5", thinking_level="minimal")
     )
 
     body = provider._build_request_body([], None, None, None)
@@ -170,7 +170,7 @@ async def test_stream_impl_raises_when_openai_credentials_are_invalid(monkeypatc
 @pytest.mark.asyncio
 async def test_stream_falls_back_to_sse_when_websocket_fails_before_events(monkeypatch):
     provider = OpenAICodexResponsesProvider(
-        ProviderConfig(session_id="session-fallback", model="gpt-5.4")
+        ProviderConfig(session_id="session-fallback", model="gpt-5.5")
     )
 
     async def fail_websocket(*args, **kwargs):
@@ -209,7 +209,7 @@ async def test_stream_emits_stream_error_and_records_fallback_on_mid_stream_ws_f
     monkeypatch,
 ):
     provider = OpenAICodexResponsesProvider(
-        ProviderConfig(session_id="session-mid", model="gpt-5.4")
+        ProviderConfig(session_id="session-mid", model="gpt-5.5")
     )
 
     async def ws_events(*args, **kwargs):
@@ -254,7 +254,7 @@ async def test_stream_falls_back_to_sse_after_raw_websocket_event_without_stream
     monkeypatch,
 ):
     provider = OpenAICodexResponsesProvider(
-        ProviderConfig(session_id="session-raw-start", model="gpt-5.4")
+        ProviderConfig(session_id="session-raw-start", model="gpt-5.5")
     )
 
     async def ws_events(*args, **kwargs):
@@ -295,7 +295,7 @@ async def test_stream_falls_back_to_sse_after_raw_websocket_event_without_stream
 @pytest.mark.asyncio
 async def test_stream_propagates_non_codex_exception_from_websocket_setup(monkeypatch):
     provider = OpenAICodexResponsesProvider(
-        ProviderConfig(session_id="session-bug", model="gpt-5.4")
+        ProviderConfig(session_id="session-bug", model="gpt-5.5")
     )
 
     async def buggy_websocket(*args, **kwargs):
@@ -327,7 +327,7 @@ async def test_stream_propagates_non_codex_exception_from_websocket_setup(monkey
 @pytest.mark.asyncio
 async def test_websocket_reuse_sends_only_cached_input_delta(monkeypatch):
     provider = OpenAICodexResponsesProvider(
-        ProviderConfig(session_id="session-cache", model="gpt-5.4")
+        ProviderConfig(session_id="session-cache", model="gpt-5.5")
     )
     sent_bodies: list[dict[str, Any]] = []
     response_ids = ["resp_1", "resp_2"]
@@ -396,7 +396,7 @@ async def test_websocket_reuse_sends_only_cached_input_delta(monkeypatch):
     monkeypatch.setattr(provider, "_new_websocket_connection", fake_new_connection)
 
     first_body = {
-        "model": "gpt-5.4",
+        "model": "gpt-5.5",
         "store": False,
         "stream": True,
         "input": [{"role": "user", "content": [{"type": "input_text", "text": "Say hello"}]}],
@@ -410,7 +410,7 @@ async def test_websocket_reuse_sends_only_cached_input_delta(monkeypatch):
     assert first_events[-1]["type"] == "response.completed"
 
     second_body = {
-        "model": "gpt-5.4",
+        "model": "gpt-5.5",
         "store": False,
         "stream": True,
         "input": [
@@ -443,7 +443,7 @@ async def test_websocket_reuse_sends_only_cached_input_delta(monkeypatch):
 @pytest.mark.asyncio
 async def test_cancelled_websocket_stream_closes_and_evicts_cached_connection(monkeypatch):
     provider = OpenAICodexResponsesProvider(
-        ProviderConfig(session_id="session-cancel", model="gpt-5.4")
+        ProviderConfig(session_id="session-cancel", model="gpt-5.5")
     )
     sent = asyncio.Event()
     receiving = asyncio.Event()
@@ -485,7 +485,7 @@ async def test_cancelled_websocket_stream_closes_and_evicts_cached_connection(mo
     monkeypatch.setattr(provider, "_new_websocket_connection", fake_new_connection)
 
     events = provider._stream_websocket_events(
-        {"model": "gpt-5.4", "stream": True},
+        {"model": "gpt-5.5", "stream": True},
         {"Authorization": "Bearer t"},
         session_id="session-cancel",
     )
@@ -535,7 +535,7 @@ async def test_process_codex_events_routes_parallel_function_call_deltas_by_item
         {"type": "response.completed", "response": {"status": "completed"}},
     ]
 
-    provider = OpenAICodexResponsesProvider(ProviderConfig(model="gpt-5.4"))
+    provider = OpenAICodexResponsesProvider(ProviderConfig(model="gpt-5.5"))
     parts = [p async for p in provider._process_codex_events(_async_iter(events), LLMStream())]
 
     starts = [p for p in parts if isinstance(p, ToolCallStart)]
@@ -581,7 +581,7 @@ async def test_process_codex_events_done_reconciliation_appends_missing_suffix()
         {"type": "response.completed", "response": {"status": "completed"}},
     ]
 
-    provider = OpenAICodexResponsesProvider(ProviderConfig(model="gpt-5.4"))
+    provider = OpenAICodexResponsesProvider(ProviderConfig(model="gpt-5.5"))
     parts = [p async for p in provider._process_codex_events(_async_iter(events), LLMStream())]
     deltas = [p for p in parts if isinstance(p, ToolCallDelta)]
 
@@ -616,7 +616,7 @@ async def test_process_codex_events_output_item_done_reconciles_from_initial_arg
         {"type": "response.completed", "response": {"status": "completed"}},
     ]
 
-    provider = OpenAICodexResponsesProvider(ProviderConfig(model="gpt-5.4"))
+    provider = OpenAICodexResponsesProvider(ProviderConfig(model="gpt-5.5"))
     parts = [p async for p in provider._process_codex_events(_async_iter(events), LLMStream())]
     deltas = [p for p in parts if isinstance(p, ToolCallDelta)]
 
@@ -651,7 +651,7 @@ async def test_process_codex_events_final_arguments_can_replace_partial_argument
         {"type": "response.completed", "response": {"status": "completed"}},
     ]
 
-    provider = OpenAICodexResponsesProvider(ProviderConfig(model="gpt-5.4"))
+    provider = OpenAICodexResponsesProvider(ProviderConfig(model="gpt-5.5"))
     parts = [p async for p in provider._process_codex_events(_async_iter(events), LLMStream())]
     deltas = [p for p in parts if isinstance(p, ToolCallDelta)]
 
@@ -674,7 +674,7 @@ async def test_incomplete_response_with_content_filter_maps_to_stop_reason_error
         }
     ]
 
-    provider = OpenAICodexResponsesProvider(ProviderConfig(model="gpt-5.4"))
+    provider = OpenAICodexResponsesProvider(ProviderConfig(model="gpt-5.5"))
     parts = [p async for p in provider._process_codex_events(_async_iter(events), LLMStream())]
     done = [p for p in parts if isinstance(p, StreamDone)]
 
@@ -683,7 +683,7 @@ async def test_incomplete_response_with_content_filter_maps_to_stop_reason_error
 
 
 def test_apply_response_metadata_preserves_zero_cache_write_tokens():
-    provider = OpenAICodexResponsesProvider(ProviderConfig(model="gpt-5.4"))
+    provider = OpenAICodexResponsesProvider(ProviderConfig(model="gpt-5.5"))
     llm_stream = LLMStream()
     response_obj = {
         "usage": {

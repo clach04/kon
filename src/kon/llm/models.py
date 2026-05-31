@@ -24,7 +24,7 @@ class ApiType(Enum):
 
 @dataclass
 class Model:
-    id: str  # Model ID (e.g., "glm-4.7", "glm-5.1", "claude-opus-4.5")
+    id: str  # Model ID (e.g., "glm-5.1", "claude-opus-4.6")
     provider: str  # "openai", "zhipu", "github-copilot", "openai-codex"
     api: ApiType  # Which API format to use
     base_url: str  # API endpoint
@@ -37,16 +37,6 @@ class Model:
 
 MODELS: dict[str, Model] = {
     # ZhiPu models
-    "glm-4.7": Model(
-        id="glm-4.7",
-        provider="zhipu",
-        api=ApiType.OPENAI_COMPLETIONS,
-        base_url="https://api.z.ai/api/coding/paas/v4",
-        max_tokens=8192,
-        supports_images=False,
-        supports_thinking=True,
-        vision_model="glm-4v-flash",
-    ),
     "glm-5.1": Model(
         id="glm-5.1",
         provider="zhipu",
@@ -95,24 +85,6 @@ MODELS: dict[str, Model] = {
         supports_thinking=True,
     ),
     # GitHub Copilot models - GPT/Codex (uses OpenAI Responses API)
-    "gpt-5.3-codex-copilot": Model(
-        id="gpt-5.3-codex",
-        provider="github-copilot",
-        api=ApiType.GITHUB_COPILOT_RESPONSES,
-        base_url="https://api.individual.githubcopilot.com",
-        max_tokens=8192 * 2,
-        supports_images=True,
-        supports_thinking=True,
-    ),
-    "gpt-5.4-copilot": Model(
-        id="gpt-5.4",
-        provider="github-copilot",
-        api=ApiType.GITHUB_COPILOT_RESPONSES,
-        base_url="https://api.individual.githubcopilot.com",
-        max_tokens=8192 * 2,
-        supports_images=True,
-        supports_thinking=True,
-    ),
     "gpt-5.5-copilot": Model(
         id="gpt-5.5",
         provider="github-copilot",
@@ -123,24 +95,6 @@ MODELS: dict[str, Model] = {
         supports_thinking=True,
     ),
     # OpenAI Codex OAuth models (ChatGPT Plus/Pro subscription)
-    "gpt-5.3-codex": Model(
-        id="gpt-5.3-codex",
-        provider="openai-codex",
-        api=ApiType.OPENAI_CODEX_RESPONSES,
-        base_url="https://chatgpt.com/backend-api",
-        max_tokens=8192 * 2,
-        supports_images=True,
-        supports_thinking=True,
-    ),
-    "gpt-5.4": Model(
-        id="gpt-5.4",
-        provider="openai-codex",
-        api=ApiType.OPENAI_CODEX_RESPONSES,
-        base_url="https://chatgpt.com/backend-api",
-        max_tokens=8192 * 2,
-        supports_images=True,
-        supports_thinking=True,
-    ),
     "gpt-5.5": Model(
         id="gpt-5.5",
         provider="openai-codex",

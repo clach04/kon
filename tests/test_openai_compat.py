@@ -167,7 +167,7 @@ def test_openai_codex_request_uses_session_for_prompt_caching() -> None:
     provider = OpenAICodexResponsesProvider(
         ProviderConfig(
             base_url="https://chatgpt.com/backend-api",
-            model="gpt-5.4",
+            model="gpt-5.5",
             provider="openai-codex",
             session_id="session-123",
         )
@@ -184,7 +184,7 @@ def test_openai_codex_request_uses_session_for_prompt_caching() -> None:
 def test_openai_codex_request_omits_prompt_cache_fields_without_session() -> None:
     provider = OpenAICodexResponsesProvider(
         ProviderConfig(
-            base_url="https://chatgpt.com/backend-api", model="gpt-5.4", provider="openai-codex"
+            base_url="https://chatgpt.com/backend-api", model="gpt-5.5", provider="openai-codex"
         )
     )
 

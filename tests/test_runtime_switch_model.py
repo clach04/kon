@@ -83,7 +83,7 @@ def test_initialize_creates_openai_codex_agent_without_credentials(tmp_path, mon
 def test_switch_model_recreates_provider_when_openai_compatible_base_url_changes(monkeypatch):
     initial_provider = _FakeProvider(
         ProviderConfig(
-            provider="zhipu", base_url="https://api.z.ai/api/coding/paas/v4", model="glm-4.7"
+            provider="zhipu", base_url="https://api.z.ai/api/coding/paas/v4", model="glm-5.1"
         )
     )
     runtime = _runtime_with_provider(initial_provider)
@@ -139,7 +139,7 @@ def test_switch_model_reuses_provider_when_openai_compatible_base_url_is_unchang
 def test_switch_model_creates_provider_when_provider_is_none(monkeypatch):
     runtime = ConversationRuntime(
         cwd="/test/project",
-        model="glm-4.7",
+        model="glm-5.1",
         model_provider="zhipu",
         api_key="test-key",
         base_url=None,
