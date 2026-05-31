@@ -44,6 +44,14 @@ Use repository tools to inspect the actual diff and surrounding code. Prefer pre
 
 Read nearby implementation and tests when needed to prove whether a suspected issue is real. Avoid speculative findings.
 
+## Priority rubric
+
+Use these severity levels for finding titles:
+- `[P0]` — Drop everything to fix. Blocking release, operations, or major usage. Only use for universal issues that do not depend on assumptions about inputs.
+- `[P1]` — Urgent. Should be addressed in the next cycle.
+- `[P2]` — Normal. Should be fixed eventually.
+- `[P3]` — Low. Nice to have.
+
 ## Finding format
 
 For each finding, include:
@@ -56,7 +64,9 @@ For each finding, include:
 Keep line ranges as short as possible and make sure they overlap the reviewed diff when possible.
 
 End with an overall verdict:
-- `patch is correct` if no blocking/real bugs were found;
-- `patch is incorrect` if one or more findings indicate the patch can break behavior or needs correction.
+- `patch is correct` if existing code/tests should not break and no blocking issues were found;
+- `patch is incorrect` if the patch has blocking correctness, security, reliability, or maintainability issues that should prevent merging.
+
+Do not mark a patch incorrect for non-blocking issues such as style, formatting, typos, documentation nits, or ordinary `[P2]`/`[P3]` follow-ups unless they still indicate the patch should not merge.
 
 Do not fix the code unless the user asks after the review.
