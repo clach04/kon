@@ -145,18 +145,56 @@ def strip_markdown_for_collapsed_text(text: str) -> str:
     return text
 
 
+def markdown_render_width() -> int:
+    term_width = shutil.get_terminal_size().columns
+    return max(40, term_width - 4)
+
+
 def format_markdown(text: str, width: int | None = None) -> Text:
     text = preprocess_latex(text)
     sanitized = _strip_inline_code_ticks_in_headings(text)
     md = CustomMarkdown(sanitized)
     if width is None:
-        term_width = shutil.get_terminal_size().columns
-        width = max(40, term_width - 4)
+        width = markdown_render_width()
     console = Console(force_terminal=True, no_color=False, theme=MARKDOWN_THEME, width=width)
     with console.capture() as capture:
         console.print(md)
     rendered = capture.get()
     return Text.from_ansi(rendered.rstrip("\n"))
+
+
+def find_stable_block_boundary(text: str) -> int:
+    """Offset just after the last blank line outside a code fence, 0 if none.
+
+    Everything before the boundary is a closed run of top-level markdown blocks.
+    Content streamed after it can no longer change how that text renders.
+    """
+    boundary = 0
+    offset = 0
+    in_fence = False
+    for line in text.splitlines(keepends=True):
+        stripped = line.strip()
+        if stripped.startswith(("```", "~~~")):
+            in_fence = not in_fence
+        elif not stripped and not in_fence:
+            boundary = offset + len(line)
+        offset += len(line)
+    return boundary
+
+
+def format_markdown_block(text: str, width: int) -> Text:
+    """Render a markdown fragment with blank edge lines stripped.
+
+    A fragment can render with stray blank edge lines (a lone list starts with one).
+    Stripping them lets cached blocks be joined with a single blank line, the same
+    spacing Rich puts between top-level elements in a full render.
+    """
+    lines = list(format_markdown(text, width).split("\n"))
+    while lines and not lines[0].plain.strip():
+        lines.pop(0)
+    while lines and not lines[-1].plain.strip():
+        lines.pop()
+    return Text("\n").join(lines)
 
 
 _BASH_TOKEN_RE = re.compile(
