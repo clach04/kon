@@ -14,7 +14,14 @@ from kon.core.types import ImageContent
 from kon.diff_display import DIFF_BG_PAD_MARKER
 from kon.permissions import ApprovalResponse
 
-from .formatting import format_bash_command, format_markdown, strip_markdown_for_collapsed_text
+from .formatting import (
+    find_stable_block_boundary,
+    format_bash_command,
+    format_markdown,
+    format_markdown_block,
+    markdown_render_width,
+    strip_markdown_for_collapsed_text,
+)
 
 _UPDATE_COMMAND = "uv tool upgrade kon-coding-agent"
 
@@ -39,17 +46,21 @@ def stylize_badge_markers(text: Text, markers: Iterable[str]) -> None:
 
 
 class _StreamingMarkdownMixin:
-    """Line-buffered markdown streaming.
+    """Block-cached markdown streaming.
 
-    Completed lines are committed through Kon's Rich markdown formatter so block-level
-    structure stays stable. The current unfinished line is buffered until a newline
-    arrives, then coalesced into the next refresh frame so fast token streams don't
-    trigger one layout pass per token.
+    The current unfinished line is buffered until a newline arrives. Completed text is
+    split at stable block boundaries (blank lines outside code fences). Closed blocks
+    are rendered once and cached, so each refresh only re-renders the open tail block,
+    coalesced into the next frame. `_flush_streaming` does one full render at the end,
+    so the final display never carries streaming artifacts.
     """
 
     _pending: str
     _completed: str
     _completed_display: Text
+    _committed_blocks: list[Text]
+    _committed_len: int
+    _committed_width: int
     _stream_update_pending: bool
     _stream_finalized: bool
 
@@ -57,6 +68,9 @@ class _StreamingMarkdownMixin:
         self._pending = ""
         self._completed = ""
         self._completed_display = Text()
+        self._committed_blocks = []
+        self._committed_len = 0
+        self._committed_width = 0
         self._stream_update_pending = False
         self._stream_finalized = False
 
@@ -67,7 +81,28 @@ class _StreamingMarkdownMixin:
         return None
 
     def _refresh_completed_display(self) -> None:
-        self._completed_display = format_markdown(self._completed) if self._completed else Text()
+        width = markdown_render_width()
+        if width != self._committed_width:  # cached renders are stale after a resize
+            self._committed_blocks = []
+            self._committed_len = 0
+            self._committed_width = width
+
+        boundary = find_stable_block_boundary(self._completed)
+        if boundary > self._committed_len:
+            block = format_markdown_block(self._completed[self._committed_len : boundary], width)
+            # Some source renders to nothing (HTML comments, link reference definitions).
+            # An empty entry here would add a stray blank gap to every later join.
+            if block.plain:
+                self._committed_blocks.append(block)
+            self._committed_len = boundary
+
+        tail = self._completed[self._committed_len :]
+        parts = [*self._committed_blocks]
+        if tail.strip():
+            tail_block = format_markdown_block(tail, width)
+            if tail_block.plain:
+                parts.append(tail_block)
+        self._completed_display = Text("\n\n").join(parts) if parts else Text()
 
     def _render_streaming_display(self) -> Text:
         display = self._completed_display.copy()
@@ -93,6 +128,11 @@ class _StreamingMarkdownMixin:
 
     def _flush_streaming_update(self) -> None:
         self._stream_update_pending = False
+        if self._stream_finalized:
+            # An update scheduled by the last newline can fire after finalize() already
+            # put the final render on the label. Don't overwrite it.
+            return
+        self._refresh_completed_display()
         self._streaming_update_label(self._render_streaming_display())
 
     def _append_streaming(self, text: str) -> None:
@@ -102,7 +142,6 @@ class _StreamingMarkdownMixin:
         if last_nl != -1:
             self._completed += self._pending[: last_nl + 1]
             self._pending = self._pending[last_nl + 1 :]
-            self._refresh_completed_display()
             self._schedule_streaming_update()
 
     def _flush_streaming(self) -> Text:
@@ -110,7 +149,7 @@ class _StreamingMarkdownMixin:
         if self._pending:
             self._completed += self._pending
             self._pending = ""
-        self._refresh_completed_display()
+        self._completed_display = format_markdown(self._completed) if self._completed else Text()
         return self._render_streaming_display()
 
 
