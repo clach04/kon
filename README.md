@@ -473,7 +473,7 @@ Important fields:
 
 - `name` - skill identifier
 - `description` - used for discovery and prompt context
-- `register_cmd` - if `true`, exposes the skill as a slash command and includes it in the `/cmd` popup for manual triggering
+- `register_cmd` - if `true`, exposes the skill as a slash command and includes it in the `/cmd` popup for manual triggering; use `only` to register it as a slash command without including it in the system prompt
 - `cmd_info` - short help text for the slash menu
 
 Validation highlights:

@@ -92,6 +92,40 @@ description: test
         assert result["description"] == "test"
         assert "#" not in result.get("name", "")
 
+    def test_inline_comments_ignored(self):
+        content = """---
+name: my-skill
+register_cmd: true  # also registers the skill in the /cmd popup
+cmd_info: slash hint # shown in menu
+---
+"""
+        result = _parse_frontmatter(content)
+
+        assert result["register_cmd"] == "true"
+        assert result["cmd_info"] == "slash hint"
+
+    def test_inline_comment_marker_preserved_inside_quotes(self):
+        content = """---
+name: my-skill
+description: "Uses # tags"
+cmd_info: 'hash # hint' # shown in menu
+---
+"""
+        result = _parse_frontmatter(content)
+
+        assert result["description"] == "Uses # tags"
+        assert result["cmd_info"] == "hash # hint"
+
+    def test_hash_without_preceding_space_preserved(self):
+        content = """---
+name: my-skill
+description: issue#123
+---
+"""
+        result = _parse_frontmatter(content)
+
+        assert result["description"] == "issue#123"
+
     def test_colon_in_value(self):
         content = """---
 name: my-skill
@@ -262,6 +296,24 @@ register_cmd: yes
 
         assert skill is not None
         assert skill.register_cmd is True
+        assert skill.include_in_prompt is True
+        assert warnings == []
+
+    def test_register_cmd_only_excludes_skill_from_prompt(self, tmp_path):
+        skill_dir = tmp_path / "cmd-only-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("""---
+name: cmd-only-skill
+description: Slash only skill
+register_cmd: only
+---
+""")
+
+        skill, warnings = _load_skill_from_dir(skill_dir)
+
+        assert skill is not None
+        assert skill.register_cmd is True
+        assert skill.include_in_prompt is False
         assert warnings == []
 
 
@@ -516,3 +568,33 @@ class TestFormatSkillsForPrompt:
 
         assert "<name>skill-a</name>" in result
         assert "<name>skill-b</name>" in result
+
+    def test_excludes_cmd_only_skills(self):
+        skills = [
+            Skill(name="skill-a", description="First", path="/a/SKILL.md"),
+            Skill(
+                name="skill-b",
+                description="Second",
+                path="/b/SKILL.md",
+                register_cmd=True,
+                include_in_prompt=False,
+            ),
+        ]
+
+        result = formatted_skills(skills)
+
+        assert "<name>skill-a</name>" in result
+        assert "<name>skill-b</name>" not in result
+
+    def test_returns_empty_when_all_skills_are_cmd_only(self):
+        skills = [
+            Skill(
+                name="skill-a",
+                description="First",
+                path="/a/SKILL.md",
+                register_cmd=True,
+                include_in_prompt=False,
+            )
+        ]
+
+        assert formatted_skills(skills) == ""
