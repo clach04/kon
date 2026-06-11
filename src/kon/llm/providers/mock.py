@@ -16,6 +16,7 @@ Scenarios (set via scenario parameter):
 - "long_text": multiple text chunks
 - "tool_hang": emits a tool call and then never sends StreamDone
 - "tool_hang_invalid_json": emits an incomplete tool-call JSON payload and hangs
+- "tool_hang_with_initial_args": tool call with initial args, then an incomplete delta, then hangs
 - "tool_with_many_chunks": tool call with many argument chunks for token counting tests
 - "leading_empty_text_then_think": emits leading newlines before thinking
 - "leading_empty_text_then_text": emits leading newlines before text
@@ -152,6 +153,24 @@ class MockProvider(BaseProvider):
                     await asyncio.sleep(3600)
 
                 return tool_hang_invalid_json_iter()
+
+            case "tool_hang_with_initial_args":
+
+                async def tool_hang_with_initial_args_iter():
+                    yield ToolCallStart(
+                        id="call-1",
+                        name="write",
+                        index=0,
+                        arguments={"path": "/tmp/stale.txt", "content": "stale snapshot"},
+                    )
+                    yield ToolCallDelta(
+                        index=0,
+                        arguments_delta='{"path": "/tmp/test.txt", "content": "incomplete',
+                        replace=True,
+                    )
+                    await asyncio.sleep(3600)
+
+                return tool_hang_with_initial_args_iter()
 
             case "tool_with_many_chunks":
 

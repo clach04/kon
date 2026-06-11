@@ -628,7 +628,31 @@ async def test_run_single_turn_skips_tool_on_invalid_partial_json_arguments(
     assert tool_result.result.is_error is True
     first_content = tool_result.result.content[0]
     assert isinstance(first_content, TextContent)
-    assert "incomplete or invalid JSON" in first_content.text
+    assert "cut off when the stream stalled" in first_content.text
+
+
+@pytest.mark.asyncio
+async def test_run_single_turn_stall_does_not_fall_back_to_initial_arguments(
+    sample_messages, tools
+):
+    set_config(Config({"llm": {"tool_call_idle_timeout_seconds": 0.01}}))
+    try:
+        provider = MockProvider(scenario="tool_hang_with_initial_args")
+        events = []
+
+        async for event in run_single_turn(provider, sample_messages, tools, turn=1):
+            events.append(event)
+    finally:
+        reset_config()
+
+    # The stale initial-arguments snapshot must not be executed when the
+    # streamed arguments were cut off by the stall.
+    tool_result = next(e for e in events if isinstance(e, ToolResultEvent))
+    assert tool_result.result is not None
+    assert tool_result.result.is_error is True
+    first_content = tool_result.result.content[0]
+    assert isinstance(first_content, TextContent)
+    assert "cut off when the stream stalled" in first_content.text
 
 
 @pytest.mark.asyncio

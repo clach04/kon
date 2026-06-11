@@ -146,6 +146,7 @@ def _finalize_tool_call_data(tool_call_data: dict, tools: list[BaseTool]) -> Pen
     arguments_raw = tool_call_data["arguments"]
     initial_arguments = tool_call_data.get("initial_arguments")
     initial_arguments_dict = initial_arguments if isinstance(initial_arguments, dict) else {}
+    stalled = tool_call_data.get("stalled", False)
     preflight_error: str | None = None
 
     stripped_args = arguments_raw.strip()
@@ -153,7 +154,16 @@ def _finalize_tool_call_data(tool_call_data: dict, tools: list[BaseTool]) -> Pen
         try:
             arguments = json.loads(arguments_raw)
         except json.JSONDecodeError:
-            if initial_arguments_dict:
+            if stalled:
+                # The stream timed out mid-arguments, so whatever we collected is
+                # truncated and initial_arguments is a stale snapshot from the
+                # start of the call. Refuse to execute rather than guess.
+                arguments = {}
+                preflight_error = (
+                    "Tool call arguments were cut off when the stream stalled; "
+                    "skipping execution instead of running with truncated arguments."
+                )
+            elif initial_arguments_dict:
                 arguments = initial_arguments_dict
             else:
                 arguments = {}
@@ -175,9 +185,15 @@ def _finalize_tool_call_data(tool_call_data: dict, tools: list[BaseTool]) -> Pen
             display = tool.format_call(params)
             approval_preview = tool.format_preview(params) or ""
         except (TypeError, KeyError, ValueError, ValidationError):
-            preflight_error = (
-                "Tool call arguments failed validation before execution; skipping execution."
-            )
+            if stalled:
+                preflight_error = (
+                    "Tool call arguments failed validation after the stream stalled "
+                    "mid-call, so they are likely incomplete; skipping execution."
+                )
+            else:
+                preflight_error = (
+                    "Tool call arguments failed validation before execution; skipping execution."
+                )
 
     return PendingToolCall(
         tool_call=tool_call,
@@ -407,6 +423,11 @@ class _TurnRunner:
 
                 if outcome is _ChunkOutcome.STALLED:
                     await _close_stream(self._stream)
+                    # Calls still streaming arguments may be truncated; mark them
+                    # so finalization can skip execution instead of running with
+                    # partial arguments.
+                    for tool_call_data in self._active_tool_calls.values():
+                        tool_call_data["stalled"] = True
                     timeout_secs = chunk_timeout or 0
                     yield WarningEvent(
                         warning=(
