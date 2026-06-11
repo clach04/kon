@@ -367,7 +367,7 @@ def formatted_skills(skills: list[Skill]) -> str:
         lines.append("<skill>")
         lines.append(f"<name>{escape_xml(skill.name)}</name>")
         lines.append(f"<description>{escape_xml(skill.description)}</description>")
-        lines.append(f"<location>{escape_xml(skill.path)}</location>")
+        lines.append(f"<path>{escape_xml(skill.path)}</path>")
         lines.append("</skill>")
 
     lines.append("</available_skills>")
