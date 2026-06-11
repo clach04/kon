@@ -89,7 +89,7 @@ def main() -> None:
             )
         )
 
-    from .ui.app import run_tui
+    from .ui.launch import run_tui
 
     run_tui(args, extra_tools=extra_tools)
 

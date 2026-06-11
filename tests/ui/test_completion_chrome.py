@@ -227,6 +227,11 @@ class FakeKon:
     def on_completion_select(self, event: InputBox.CompletionSelect) -> None:
         Kon.on_completion_select(self._kon(), event)
 
+    def _apply_selection_mode_choice(
+        self, item: ListItem, input_box: Any, was_at_bottom: bool
+    ) -> None:
+        Kon._apply_selection_mode_choice(self._kon(), item, input_box, was_at_bottom)
+
     def _show_selection_picker(
         self,
         items: list[ListItem],

@@ -3,8 +3,8 @@ from contextlib import contextmanager
 import pytest
 
 from kon.llm.oauth.openai import OpenAICredentials
-from kon.ui import commands
 from kon.ui.commands import CommandsMixin
+from kon.ui.commands import auth as commands
 from kon.ui.floating_list import ListItem
 from kon.ui.selection_mode import SelectionMode
 

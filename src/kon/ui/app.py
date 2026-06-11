@@ -1,19 +1,29 @@
-import argparse
+"""The Kon app: widget composition, runtime wiring, key bindings and input routing.
+
+Behaviour is split across focused mixins:
+
+- commands/        - slash-command handling (CommandsMixin)
+- session_ui.py    - rendering persisted sessions into the chat log (SessionUIMixin)
+- queue_ui.py      - pending/steer message queues (QueueUIMixin)
+- completion_ui.py - completion list and selection-mode pickers (CompletionUIMixin)
+- agent_runner.py  - driving agent runs and shell commands (AgentRunnerMixin)
+- startup.py       - background startup chores (StartupMixin)
+- launch.py        - run_tui() entrypoint and exit summary
+"""
+
 import asyncio
-import glob
 import os
 import time
 from collections import deque
-from typing import ClassVar, Literal
+from typing import ClassVar
 
-from rich.console import Console
 from textual import events, on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 
-from kon import config, consume_config_warnings, update_available_binaries
-from kon.tools_manager import ensure_tools, get_tool_path
-from kon.version import PACKAGE_NAME, VERSION
+from kon import config, consume_config_warnings
+from kon.tools_manager import get_tool_path
+from kon.version import VERSION
 
 from ..context.skills import (
     load_builtin_cmd_skills,
@@ -21,64 +31,40 @@ from ..context.skills import (
     merge_registered_skills,
     render_skill_prompt,
 )
-from ..core.types import StopReason
-from ..events import (
-    AgentEndEvent,
-    AgentStartEvent,
-    CompactionEndEvent,
-    CompactionStartEvent,
-    ErrorEvent,
-    InterruptedEvent,
-    RetryEvent,
-    TextDeltaEvent,
-    TextEndEvent,
-    TextStartEvent,
-    ThinkingDeltaEvent,
-    ThinkingEndEvent,
-    ThinkingStartEvent,
-    ToolApprovalEvent,
-    ToolArgsTokenUpdateEvent,
-    ToolEndEvent,
-    ToolResultEvent,
-    ToolStartEvent,
-    TurnEndEvent,
-    TurnStartEvent,
-    WarningEvent,
-)
 from ..llm import BaseProvider
 from ..llm.base import AuthMode
-from ..notify import NotificationEvent, notify
 from ..permissions import ApprovalResponse
 from ..runtime import ConversationRuntime
 from ..session import Session
-from ..tools import DEFAULT_TOOLS, EXTRA_TOOLS, get_tool, get_tools
-from ..tools.bash import BashParams, BashTool
-from ..update_check import get_newer_pypi_version
-from .autocomplete import (
-    DEFAULT_COMMANDS,
-    FilePathProvider,
-    PullRequestProvider,
-    SlashCommand,
-    SlashCommandProvider,
-)
+from ..tools import DEFAULT_TOOLS, EXTRA_TOOLS, get_tools
+from .agent_runner import AgentRunnerMixin
+from .autocomplete import DEFAULT_COMMANDS, SlashCommand
 from .blocks import HandoffLinkBlock, LaunchWarning
 from .chat import ChatLog
 from .commands import CommandsMixin
-from .floating_list import FloatingList, ListItem
+from .completion_ui import CompletionUIMixin
+from .floating_list import FloatingList
 from .input import InputBox
+from .queue_ui import QueueUIMixin
 from .selection_mode import SelectionMode
 from .session_ui import SessionUIMixin
+from .startup import StartupMixin
 from .styles import get_styles
 from .tree import TreeSelector
 from .widgets import InfoBar, QueueDisplay, StatusLine, format_path
 
-_CHANGELOG_URL = "https://github.com/0xku/kon/blob/main/CHANGELOG.md"
-
-_NOTIFY_EVENTS = (AgentEndEvent, ToolApprovalEvent)
 _GIT_BRANCH_REFRESH_INTERVAL_SECONDS = 1.0
 
 
-class Kon(CommandsMixin, SessionUIMixin, App[None]):
+class Kon(
+    CommandsMixin,
+    SessionUIMixin,
+    QueueUIMixin,
+    CompletionUIMixin,
+    AgentRunnerMixin,
+    StartupMixin,
+    App[None],
+):
     CSS = get_styles()
     TITLE = "kon"
     VERSION = VERSION
@@ -95,6 +81,17 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
         Binding("ctrl+shift+t", "toggle_thinking", "Toggle thinking", priority=True),
         Binding("shift+tab", "cycle_permission_mode", "Cycle permission mode", priority=True),
     ]
+
+    # Textual registers @on handlers through a metaclass that only scans this
+    # class's own namespace, so handlers defined on plain mixins must be
+    # re-bound here or they would silently never be dispatched.
+    on_completion_update = CompletionUIMixin.on_completion_update
+    on_completion_hide = CompletionUIMixin.on_completion_hide
+    on_completion_select = CompletionUIMixin.on_completion_select
+    on_search_update = CompletionUIMixin.on_search_update
+    on_completion_move = CompletionUIMixin.on_completion_move
+    on_tree_selected = CompletionUIMixin.on_tree_selected
+    on_tree_cancelled = CompletionUIMixin.on_tree_cancelled
 
     _ANSI_THEME_PREFERENCE = ("textual-ansi", "ansi-dark")
 
@@ -399,345 +396,6 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
 
         gc.freeze()
 
-    async def _refresh_git_branch(self) -> None:
-        # Skip the tick if the previous refresh is still resolving in its thread.
-        if self._git_branch_refresh_inflight:
-            return
-        self._git_branch_refresh_inflight = True
-        try:
-            info_bar = self.query_one("#info-bar", InfoBar)
-            await info_bar.refresh_git_branch()
-        finally:
-            self._git_branch_refresh_inflight = False
-
-    def _scan_file_paths(self) -> list[str]:
-        patterns = [
-            "**/*.py",
-            "**/*.js",
-            "**/*.ts",
-            "**/*.tsx",
-            "**/*.json",
-            "**/*.md",
-            "**/*.yaml",
-            "**/*.yml",
-            "**/*.toml",
-        ]
-        paths = []
-        for pattern in patterns:
-            for path in glob.glob(os.path.join(self._cwd, pattern), recursive=True):
-                rel_path = os.path.relpath(path, self._cwd)
-                if not rel_path.startswith(
-                    (".git", "node_modules", "__pycache__", ".venv", "venv")
-                ):
-                    paths.append(rel_path)
-        return sorted(paths)
-
-    async def _collect_file_paths(self) -> None:
-        """Collect file paths using glob (fallback when fd is unavailable)."""
-        # The recursive glob can take seconds on large repos; keep it off the event loop.
-        paths = await asyncio.to_thread(self._scan_file_paths)
-        self.query_one("#input-box", InputBox).set_file_paths(paths)
-
-    async def _ensure_binaries(self) -> None:
-        paths = await ensure_tools(silent=True)
-        update_available_binaries()
-
-        if not self._fd_path and paths.get("fd"):
-            self._fd_path = paths["fd"]
-            self.query_one("#input-box", InputBox).set_fd_path(self._fd_path)
-
-    async def _check_for_updates(self) -> None:
-        latest = await get_newer_pypi_version(PACKAGE_NAME, VERSION)
-        if latest is None:
-            return
-
-        self._pending_update_notice_version = latest
-        self.call_later(self._show_pending_update_notice_if_idle)
-
-    def _show_pending_update_notice_if_idle(self) -> None:
-        if not self._startup_complete or self._is_running:
-            return
-        if self._update_notice_shown or self._pending_update_notice_version is None:
-            return
-
-        chat = self.query_one("#chat-log", ChatLog)
-        chat.add_update_available_message(
-            self._pending_update_notice_version, changelog_url=_CHANGELOG_URL
-        )
-        self._update_notice_shown = True
-        self._pending_update_notice_version = None
-
-    def _add_launch_warning(
-        self, message: str, *, severity: Literal["warning", "error"] = "warning"
-    ) -> None:
-        cleaned = message.strip()
-        if not cleaned:
-            return
-        self._launch_warnings.append(LaunchWarning(message=cleaned, severity=severity))
-
-    def _flush_launch_warnings(self, chat: ChatLog) -> None:
-        if self._launch_warnings:
-            chat.add_launch_warnings(self._launch_warnings)
-
-    # -------------------------------------------------------------------------
-    # Completion message handlers
-    # -------------------------------------------------------------------------
-
-    def _is_chat_at_bottom(self) -> bool:
-        chat = self.query_one("#chat-log", ChatLog)
-        return abs(chat.max_scroll_y - chat.scroll_y) < 1
-
-    def _restore_chat_scroll_if_needed(self, was_at_bottom: bool) -> None:
-        # The completion list is a normal grid row, not a true overlay. Showing or
-        # hiding it changes the available height for ChatLog. When the chat is
-        # already bottom-aligned, that resize can leave the viewport briefly at an
-        # intermediate scroll offset and cause a visible flicker. Restore the
-        # bottom scroll position after Textual has applied the layout change.
-        if was_at_bottom:
-            chat = self.query_one("#chat-log", ChatLog)
-            chat.scroll_end(animate=False)
-
-    def _restore_chat_scroll_after_refresh(self, was_at_bottom: bool) -> None:
-        self.call_after_refresh(lambda: self._restore_chat_scroll_if_needed(was_at_bottom))
-
-    def _set_bottom_info_displaced(self, displaced: bool) -> None:
-        info_bar = self.query_one("#info-bar", InfoBar)
-        if displaced:
-            info_bar.add_class("-completion-hidden")
-        else:
-            info_bar.remove_class("-completion-hidden")
-
-    def _show_completion_list(
-        self,
-        items: list[ListItem],
-        *,
-        searchable: bool = False,
-        max_label_width: int | None = None,
-    ) -> None:
-        completion_list = self.query_one("#completion-list", FloatingList)
-        self._set_bottom_info_displaced(True)
-        completion_list.show(items, searchable=searchable, max_label_width=max_label_width)
-
-    def _hide_completion_list(self, *, restore_info_bar: bool = True) -> None:
-        completion_list = self.query_one("#completion-list", FloatingList)
-        completion_list.hide()
-        if restore_info_bar:
-            self._set_bottom_info_displaced(False)
-
-    @on(InputBox.CompletionUpdate)
-    def on_completion_update(self, event: InputBox.CompletionUpdate) -> None:
-        if self._selection_mode is not None:
-            return
-
-        completion_list = self.query_one("#completion-list", FloatingList)
-        was_at_bottom = self._is_chat_at_bottom()
-        if completion_list.is_visible:
-            self._set_bottom_info_displaced(True)
-            completion_list.update_items(event.items)
-        else:
-            self._show_completion_list(event.items)
-        self._restore_chat_scroll_after_refresh(was_at_bottom)
-
-    @on(InputBox.CompletionHide)
-    def on_completion_hide(self, event: InputBox.CompletionHide) -> None:
-        input_box = self.query_one("#input-box", InputBox)
-        was_at_bottom = self._is_chat_at_bottom()
-
-        with self.batch_update():
-            if self._selection_mode is not None:
-                # If we were in a sub-picker from settings, go back to settings
-                if self._settings_active:
-                    self._hide_completion_list(restore_info_bar=False)
-                    self._settings_active = False
-                    self._show_settings_picker()
-                    self._restore_chat_scroll_after_refresh(was_at_bottom)
-                    return
-
-                self._hide_completion_list()
-                self._selection_mode = None
-                input_box.clear()
-                input_box.set_autocomplete_enabled(True)
-                self._reset_ctrl_d_delete_state()
-            else:
-                self._hide_completion_list()
-
-            input_box.set_completing(False)
-
-        self._restore_chat_scroll_after_refresh(was_at_bottom)
-
-    @on(InputBox.CompletionSelect)
-    def on_completion_select(self, event: InputBox.CompletionSelect) -> None:
-        input_box = self.query_one("#input-box", InputBox)
-        if self._selection_mode == SelectionMode.TREE:
-            self.query_one("#tree-selector", TreeSelector).action_select()
-            return
-        was_at_bottom = self._is_chat_at_bottom()
-        completion_list = self.query_one("#completion-list", FloatingList)
-        item = completion_list.selected_item
-
-        if not item:
-            self._hide_completion_list()
-            input_box.set_completing(False)
-            input_box.submit_raw()
-            self._restore_chat_scroll_after_refresh(was_at_bottom)
-            return
-
-        if self._selection_mode is not None:
-            selection_mode = self._selection_mode
-            keeps_info_bar_displaced = selection_mode == SelectionMode.SETTINGS or (
-                selection_mode
-                in (SelectionMode.THEME, SelectionMode.THINKING, SelectionMode.THINKING_LINES)
-                and self._settings_active
-            )
-            with self.batch_update():
-                self._hide_completion_list(restore_info_bar=not keeps_info_bar_displaced)
-                self._selection_mode = None
-                input_box.clear()
-                input_box.set_autocomplete_enabled(True)
-                input_box.set_completing(False)
-                self._reset_ctrl_d_delete_state()
-
-            def show_settings_picker_and_restore() -> None:
-                self._show_settings_picker()
-                self._restore_chat_scroll_after_refresh(was_at_bottom)
-
-            match selection_mode:
-                case SelectionMode.SETTINGS:
-                    settings_result = self._handle_settings_select(item.value)
-                    if settings_result == "closed":
-                        self._set_bottom_info_displaced(False)
-                case SelectionMode.SESSION:
-                    self.run_worker(self._load_session(item.value.path), exclusive=True)
-                case SelectionMode.TREE:
-                    pass
-                case SelectionMode.MODEL:
-                    self._select_model(item.value)
-                case SelectionMode.THEME:
-                    self._select_theme(item.value)
-                    if self._settings_active:
-                        self._settings_active = False
-                        self.call_later(show_settings_picker_and_restore)
-                        return
-                case SelectionMode.PERMISSIONS:
-                    self._select_permission_mode(item.value)
-                case SelectionMode.THINKING:
-                    self._select_thinking_level(item.value)
-                    if self._settings_active:
-                        self._settings_active = False
-                        self.call_later(show_settings_picker_and_restore)
-                        return
-                case SelectionMode.THINKING_LINES:
-                    self._select_thinking_lines(item.value)
-                    if self._settings_active:
-                        self._settings_active = False
-                        self.call_later(show_settings_picker_and_restore)
-                        return
-                case SelectionMode.NOTIFICATIONS:
-                    self._select_notifications_mode(item.value)
-                case SelectionMode.LOGIN:
-                    self._select_login_provider(item.value)
-                case SelectionMode.LOGOUT:
-                    self._select_logout_provider(item.value)
-
-            self._restore_chat_scroll_after_refresh(was_at_bottom)
-            return
-
-        if input_box.is_tab_completing:
-            self._hide_completion_list()
-            input_box.apply_tab_path_completion(item)
-            self._restore_chat_scroll_after_refresh(was_at_bottom)
-            return
-
-        provider = input_box.active_provider
-        self._hide_completion_list()
-
-        if isinstance(provider, SlashCommandProvider):
-            input_box.apply_slash_command(item)
-        elif isinstance(provider, FilePathProvider | PullRequestProvider):
-            input_box.apply_provider_completion(item)
-
-        input_box.set_completing(False)
-        self._restore_chat_scroll_after_refresh(was_at_bottom)
-
-    @on(InputBox.SearchUpdate)
-    def on_search_update(self, event: InputBox.SearchUpdate) -> None:
-        if self._selection_mode is None or self._selection_mode == SelectionMode.TREE:
-            return
-        completion_list = self.query_one("#completion-list", FloatingList)
-        completion_list.set_search_query(event.query)
-        if (
-            self._selection_mode == SelectionMode.SETTINGS
-            and not event.query
-            and self._settings_selected_value is not None
-        ):
-            completion_list.select_value(self._settings_selected_value)
-
-    @on(TreeSelector.Selected)
-    async def on_tree_selected(self, event: TreeSelector.Selected) -> None:
-        selector = self.query_one("#tree-selector", TreeSelector)
-        input_box = self.query_one("#input-box", InputBox)
-        chat = self.query_one("#chat-log", ChatLog)
-        info_bar = self.query_one("#info-bar", InfoBar)
-        status = self.query_one("#status-line", StatusLine)
-        try:
-            result = self._runtime.navigate_tree(event.entry_id)
-        except Exception as exc:
-            chat.add_info_message(f"Tree navigation failed: {exc}", error=True)
-            return
-        selector.hide()
-        self._selection_mode = None
-        input_box.set_autocomplete_enabled(True)
-        input_box.set_completing(False)
-        await chat.remove_all_children()
-        chat.add_session_info(getattr(self, "VERSION", ""))
-        if self._runtime.context:
-            chat.add_loaded_resources(
-                context_paths=[format_path(f.path) for f in self._runtime.context.agents_files],
-                skills=self._runtime.context.skills,
-                tools=self._runtime.tools,
-            )
-        if self._runtime.session:
-            self._render_session_entries(self._runtime.session)
-            totals = self._runtime.session.token_totals()
-            info_bar.set_tokens(
-                totals.input_tokens,
-                totals.output_tokens,
-                totals.context_tokens,
-                totals.cache_read_tokens,
-                totals.cache_write_tokens,
-            )
-            info_bar.set_file_changes(self._runtime.session.file_changes_summary())
-        status.reset()
-        if result.editor_text and not input_box.text.strip():
-            input_box.insert(result.editor_text)
-        chat.show_status("Navigated to selected point")
-        input_box.focus()
-
-    @on(TreeSelector.Cancelled)
-    def on_tree_cancelled(self, event: TreeSelector.Cancelled) -> None:
-        selector = self.query_one("#tree-selector", TreeSelector)
-        input_box = self.query_one("#input-box", InputBox)
-        selector.hide()
-        self._selection_mode = None
-        input_box.set_autocomplete_enabled(True)
-        input_box.set_completing(False)
-        input_box.focus()
-
-    @on(InputBox.CompletionMove)
-    def on_completion_move(self, event: InputBox.CompletionMove) -> None:
-        if self._selection_mode == SelectionMode.TREE:
-            selector = self.query_one("#tree-selector", TreeSelector)
-            if event.direction < 0:
-                selector.action_move_up()
-            else:
-                selector.action_move_down()
-            return
-        completion_list = self.query_one("#completion-list", FloatingList)
-        if event.direction < 0:
-            completion_list.move_up()
-        else:
-            completion_list.move_down()
-
     # -------------------------------------------------------------------------
     # Key bindings
     # -------------------------------------------------------------------------
@@ -888,6 +546,10 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
             return
         self.run_worker(self._load_session_by_id(event.target_session_id), exclusive=True)
 
+    # -------------------------------------------------------------------------
+    # Tool approval
+    # -------------------------------------------------------------------------
+
     def _clear_approval_state(self) -> None:
         self._approval_future = None
         if self._approval_tool_id is not None:
@@ -933,6 +595,10 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
         event.prevent_default()
         event.stop()
         self._clear_approval_state()
+
+    # -------------------------------------------------------------------------
+    # Input submission
+    # -------------------------------------------------------------------------
 
     @on(InputBox.Submitted)
     def on_input_submitted(self, event: InputBox.Submitted) -> None:
@@ -996,531 +662,3 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
 
         self._is_running = True
         self.run_worker(self._run_agent(query_text), exclusive=True)
-
-    def _queue_items(self) -> list[tuple[bool, int, str, str]]:
-        steer = [
-            (True, index, display, query)
-            for index, (display, query) in enumerate(self._steer_queue)
-        ]
-        pending = [
-            (False, index, display, query)
-            for index, (display, query) in enumerate(self._pending_queue)
-        ]
-        return steer + pending
-
-    def _selected_queue_flat_index(self) -> int | None:
-        if self._queue_selection is None:
-            return None
-        for flat_index, (is_steer, index, _, _) in enumerate(self._queue_items()):
-            if self._queue_selection == (is_steer, index):
-                return flat_index
-        return None
-
-    def _set_queue_selection_by_flat_index(self, flat_index: int | None) -> None:
-        items = self._queue_items()
-        if flat_index is None or flat_index < 0 or flat_index >= len(items):
-            self._queue_selection = None
-        else:
-            is_steer, index, _, _ = items[flat_index]
-            self._queue_selection = (is_steer, index)
-        self._update_queue_display()
-
-    def _update_queue_display(self) -> None:
-        queue_display = self.query_one("#queue-display", QueueDisplay)
-        steer_items = [(display, True) for display, _ in self._steer_queue]
-        normal_items = [(display, False) for display, _ in self._pending_queue]
-        selected = self._selected_queue_flat_index()
-        editing = None
-
-        if self._queue_editing:
-            is_steer, index, original = self._queue_editing
-            target_items = steer_items if is_steer else normal_items
-            edit_index = min(index, len(target_items))
-            target_items.insert(edit_index, (original[0], is_steer))
-            editing = edit_index if is_steer else len(steer_items) + edit_index
-            selected = editing
-
-        queue_display.update_items(steer_items + normal_items, selected=selected, editing=editing)
-
-    def select_queue_from_input(self, direction: int) -> bool:
-        if self._queue_editing is not None:
-            return False
-        items = self._queue_items()
-        if not items:
-            return False
-        current = self._selected_queue_flat_index()
-        if current is None:
-            next_index = len(items) - 1 if direction < 0 else 0
-        else:
-            next_index = current + direction
-        if next_index < 0 or next_index >= len(items):
-            self._set_queue_selection_by_flat_index(None)
-            return False
-        self._set_queue_selection_by_flat_index(next_index)
-        return True
-
-    def delete_selected_queue_item(self) -> bool:
-        if self._queue_editing is not None or self._queue_selection is None:
-            return False
-        is_steer, index = self._queue_selection
-        queue = self._steer_queue if is_steer else self._pending_queue
-        if index >= len(queue):
-            self._set_queue_selection_by_flat_index(None)
-            return False
-        del queue[index]
-        items = self._queue_items()
-        if items:
-            self._set_queue_selection_by_flat_index(min(index, len(items) - 1))
-        else:
-            self._set_queue_selection_by_flat_index(None)
-        return True
-
-    def start_queue_edit(self) -> bool:
-        if self._queue_selection is None or self._queue_editing is not None:
-            return False
-        is_steer, index = self._queue_selection
-        queue = self._steer_queue if is_steer else self._pending_queue
-        if index >= len(queue):
-            self._set_queue_selection_by_flat_index(None)
-            return False
-        original = queue[index]
-        del queue[index]
-        self._queue_editing = (is_steer, index, original)
-        input_box = self.query_one("#input-box", InputBox)
-        input_box.clear(reset_pastes=False)
-        input_box.insert(original[1])
-        input_box.focus()
-        self._update_queue_display()
-        return True
-
-    def finish_queue_edit(self, display_text: str, query_text: str) -> bool:
-        if self._queue_editing is None:
-            return False
-        is_steer, index, _ = self._queue_editing
-        queue = self._steer_queue if is_steer else self._pending_queue
-        queue.insert(min(index, len(queue)), (display_text, query_text))
-        self._queue_editing = None
-        self._queue_selection = (is_steer, min(index, len(queue) - 1))
-        self._update_queue_display()
-        return True
-
-    def cancel_queue_edit(self) -> bool:
-        if self._queue_editing is None:
-            return False
-        is_steer, index, original = self._queue_editing
-        queue = self._steer_queue if is_steer else self._pending_queue
-        queue.insert(min(index, len(queue)), original)
-        self._queue_editing = None
-        self._queue_selection = (is_steer, min(index, len(queue) - 1))
-        self._update_queue_display()
-        input_box = self.query_one("#input-box", InputBox)
-        input_box.clear(reset_pastes=False)
-        return True
-
-    def _should_notify_for_event(self, event: object) -> bool:
-        return self._notification_event_type(event) is not None
-
-    def _notification_event_type(self, event: object) -> NotificationEvent | None:
-        if not config.notifications.enabled:
-            return None
-        if not isinstance(event, _NOTIFY_EVENTS):
-            return None
-        if isinstance(event, AgentEndEvent):
-            if event.stop_reason == StopReason.INTERRUPTED:
-                return None
-            if event.stop_reason == StopReason.ERROR:
-                return "error"
-            return "completion"
-        if isinstance(event, ToolApprovalEvent):
-            return "permission"
-        return None
-
-    async def _run_agent(self, prompt: str) -> None:
-        chat = self.query_one("#chat-log", ChatLog)
-        status = self.query_one("#status-line", StatusLine)
-        info_bar = self.query_one("#info-bar", InfoBar)
-
-        agent = self._runtime.prepare_for_run()
-        if agent is None:
-            chat.add_info_message("Agent not initialized")
-            self._is_running = False
-            return
-        current_prompt = prompt
-
-        while True:
-            was_interrupted = False
-
-            self._cancel_event = asyncio.Event()
-            self._steer_event = asyncio.Event()
-            self._abort_shown = False
-            self._current_block_type = None
-            if self._interrupt_requested:
-                self._cancel_event.set()
-
-            status.set_status("working")
-
-            try:
-                async for event in agent.run(
-                    current_prompt, cancel_event=self._cancel_event, steer_event=self._steer_event
-                ):
-                    notification_event = self._notification_event_type(event)
-                    if notification_event:
-                        notify(notification_event)
-
-                    match event:
-                        case AgentStartEvent():
-                            pass
-
-                        case TurnStartEvent():
-                            pass
-
-                        case ThinkingStartEvent():
-                            if self._current_block_type != "thinking":
-                                if self._current_block_type:
-                                    chat.end_block()
-                                block = chat.start_thinking()
-                                if self._hide_thinking:
-                                    block.add_class("-hidden")
-                                self._current_block_type = "thinking"
-
-                        case ThinkingDeltaEvent(delta=d):
-                            await chat.append_to_current(d)
-
-                        case ThinkingEndEvent():
-                            pass
-
-                        case TextStartEvent():
-                            if self._current_block_type != "content":
-                                if self._current_block_type:
-                                    chat.end_block()
-                                chat.start_content()
-                                self._current_block_type = "content"
-
-                        case TextDeltaEvent(delta=d):
-                            await chat.append_to_current(d)
-
-                        case TextEndEvent():
-                            pass
-
-                        case ToolStartEvent(tool_call_id=id, tool_name=name):
-                            if self._current_block_type:
-                                chat.end_block()
-                            tool = get_tool(name)
-                            icon = tool.tool_icon if tool else "→"
-                            chat.start_tool(name, id, "", icon=icon)
-                            self._current_block_type = "tool_call"
-                            status.increment_tool_calls()
-                            status.set_streaming_tokens(0)  # Reset token count for new tool
-
-                        case ToolArgsTokenUpdateEvent(token_count=tc):
-                            status.set_streaming_tokens(tc)
-
-                        case ToolEndEvent(tool_call_id=id, display=display):
-                            chat.update_tool_call_msg(id, display)
-
-                        case ToolApprovalEvent(
-                            tool_call_id=id, tool_name=name, display=disp, future=f
-                        ):
-                            self.app.bell()
-                            self._approval_selection = ApprovalResponse.APPROVE
-                            chat.show_tool_approval(
-                                id, preview=disp or None, selected=self._approval_selection
-                            )
-                            self._approval_future = f
-                            self._approval_tool_id = id
-
-                        case ToolResultEvent(tool_call_id=id, result=r, file_changes=fc):
-                            self._approval_future = None
-                            self._approval_tool_id = None
-                            if r:
-                                markup = True
-                                ui_summary = r.ui_summary
-                                ui_details = r.ui_details
-                                ui_details_full = r.ui_details_full
-                                if ui_summary is None and ui_details is None and r.content:
-                                    ui_details, ui_details_full = self._format_tool_result_text(r)
-                                success = not r.is_error
-                                chat.set_tool_result(
-                                    id,
-                                    ui_summary,
-                                    ui_details,
-                                    success,
-                                    markup=markup,
-                                    ui_details_full=ui_details_full,
-                                )
-                            if fc:
-                                info_bar.update_file_changes(fc.path, fc.added, fc.removed)
-
-                        case TurnEndEvent():
-                            if event.assistant_message and event.assistant_message.usage:
-                                usage = event.assistant_message.usage
-                                info_bar.update_tokens(
-                                    usage.input_tokens,
-                                    usage.output_tokens,
-                                    usage.cache_read_tokens,
-                                    usage.cache_write_tokens,
-                                )
-
-                        case InterruptedEvent():
-                            was_interrupted = True
-                            if self._current_block_type:
-                                chat.end_block()
-                                self._current_block_type = None
-
-                        case CompactionStartEvent():
-                            if self._current_block_type:
-                                chat.end_block()
-                                self._current_block_type = None
-                            chat.show_spinner_status("Auto-compacting...")
-
-                        case CompactionEndEvent(tokens_before=tb, aborted=ab, reason=why):
-                            if ab:
-                                msg = "Compaction failed"
-                                if why:
-                                    msg += f": {why}"
-                                chat.show_status(msg)
-                            else:
-                                chat.add_compaction_message(tb)
-
-                        case RetryEvent(attempt=a, total_attempts=t, delay=d, error=e):
-                            msg = f"Request failed (attempt {a}/{t}), retrying in {d}s; Error: {e}"
-                            chat.add_info_message(msg, error=True)
-
-                        case ErrorEvent(error=e):
-                            chat.add_info_message(str(e), error=True)
-
-                        case WarningEvent(warning=w):
-                            chat.add_info_message(str(w), warning=True)
-
-                        case AgentEndEvent(stop_reason=reason):
-                            if reason == StopReason.INTERRUPTED:
-                                was_interrupted = True
-                            if self._current_block_type:
-                                chat.end_block()
-                            self._current_block_type = None
-
-            except Exception as e:
-                chat.add_info_message(str(e), error=True)
-
-            if was_interrupted and not self._abort_shown:
-                chat.add_aborted_message("Interrupted by user")
-                self._abort_shown = True
-
-            self._interrupt_requested = False
-            self._cancel_event = None
-            self._steer_event = None
-            self._clear_approval_state()
-            status.set_status("idle")
-
-            if was_interrupted:
-                self._pending_queue.clear()
-                self._steer_queue.clear()
-                self._update_queue_display()
-                break
-
-            # Steer messages take priority — drain steer queue first
-            if self._steer_queue:
-                next_display, next_query = self._steer_queue.popleft()
-                self._update_queue_display()
-                chat.add_user_message(next_display)
-                current_prompt = next_query
-                continue
-
-            if self._pending_queue:
-                next_display, next_query = self._pending_queue.popleft()
-                self._update_queue_display()
-                chat.add_user_message(next_display)
-                current_prompt = next_query
-                continue
-
-            break
-
-        self._is_running = False
-
-        if self._pending_session_switch_id:
-            session_id = self._pending_session_switch_id
-            self._pending_session_switch_id = None
-            self.run_worker(self._load_session_by_id(session_id), exclusive=True)
-
-        self._show_pending_update_notice_if_idle()
-
-    def _handle_shell_command(self, display_text: str, original_text: str) -> None:
-        """Handle shell commands prefixed with ! or !!"""
-        if self._is_running:
-            return
-
-        chat = self.query_one("#chat-log", ChatLog)
-
-        # Determine if we should send output to LLM
-        send_to_llm = display_text.startswith("!!")
-
-        command_text = display_text[2:] if send_to_llm else display_text[1:]
-        command_text = command_text.strip()
-
-        if not command_text:
-            return
-
-        # Add user message showing the command
-        chat.add_user_message(display_text)
-
-        # Execute the command
-        self._is_running = True
-        self.run_worker(self._execute_shell_command(command_text, send_to_llm), exclusive=True)
-
-    async def _execute_shell_command(self, command: str, send_to_llm: bool) -> None:
-        """Execute a shell command and display the result"""
-        chat = self.query_one("#chat-log", ChatLog)
-        status = self.query_one("#status-line", StatusLine)
-
-        try:
-            # Create bash tool instance
-            bash_tool = BashTool()
-
-            # Create cancellation event for this command
-            cancel_event = asyncio.Event()
-            self._cancel_event = cancel_event
-
-            # Execute the command
-            status.set_status("running")
-            # Manual shell output should render like regular bash tool output:
-            # collapsed preview with ctrl+o expansion when details are available.
-            result = await bash_tool.execute(
-                BashParams(command=command), cancel_event=cancel_event, inline_output=False
-            )
-
-            # Start tool block and route the result through ChatLog so manual
-            # shell commands use the same rendering/expansion path as agent tools.
-            self._shell_tool_counter += 1
-            tool_id = f"shell-{self._shell_tool_counter}"
-            chat.start_tool("bash", tool_id, f"$ {command}", icon="$")
-
-            # Display the result
-            if result.success:
-                ui_summary = result.ui_summary
-                ui_details = result.ui_details
-                markup = True
-                if ui_summary is None and ui_details is None:
-                    ui_summary = result.result or "(no output)"
-                    markup = False
-            else:
-                ui_summary = result.ui_summary or "Command failed"
-                ui_details = result.ui_details or result.result
-                markup = True
-
-            chat.set_tool_result(
-                tool_id,
-                ui_summary,
-                ui_details,
-                result.success,
-                markup=markup,
-                ui_details_full=result.ui_details_full,
-            )
-
-            # If using !!, send output to LLM for follow-up unless the command was interrupted.
-            if send_to_llm and result.result and not cancel_event.is_set():
-                prompt = (
-                    "Shell command output:\n\n```\n"
-                    f"{result.result}\n```\n\nWhat would you like me to do with this?"
-                )
-                self._is_running = True
-                await self._run_agent(prompt)
-                return
-
-        except Exception as e:
-            chat.add_info_message(f"Error executing command: {e}", error=True)
-        finally:
-            self._is_running = False
-            self._interrupt_requested = False
-            self._cancel_event = None
-            status.set_status("idle")
-
-
-_LOGO = ["░█░█░█▀█░█▀█", "░█▀▄░█░█░█░█", "░▀░▀░▀▀▀░▀░▀"]
-
-
-def _format_duration(seconds: float) -> str:
-    total = int(seconds)
-    if total < 60:
-        return f"{total}s"
-    minutes = total // 60
-    secs = total % 60
-    return f"{minutes}m {secs}s"
-
-
-def _print_exit_message(
-    hints: list[str],
-    session_id: str | None = None,
-    duration_seconds: float | None = None,
-    file_changes: dict[str, tuple[int, int]] | None = None,
-) -> None:
-    colors = config.ui.colors
-    console = Console(highlight=False)
-
-    for hint in hints:
-        console.print(
-            f"[{colors.muted}]Hint:[/{colors.muted}] [{colors.dim}]{hint}[/{colors.dim}]"
-        )
-
-    t = colors.dim
-    logo_color = colors.dim
-    info_lines: list[str] = []
-
-    if duration_seconds is not None:
-        info_lines.append(f"[{t}]Time {_format_duration(duration_seconds)}[/{t}]")
-
-    if file_changes:
-        n_files = len(file_changes)
-        total_added = sum(a for a, _ in file_changes.values())
-        total_removed = sum(r for _, r in file_changes.values())
-        info_lines.append(
-            f"[{t}]Changed {n_files} file{'s' if n_files != 1 else ''}[/{t}]"
-            f" [{colors.diff_added}]+{total_added}[/{colors.diff_added}]"
-            f" [{colors.diff_removed}]-{total_removed}[/{colors.diff_removed}]"
-        )
-
-    if session_id:
-        info_lines.append(
-            f"[{colors.muted}]To resume:[/{colors.muted}] "
-            f"[{colors.accent}]kon -r {session_id}[/{colors.accent}]"
-        )
-
-    if not info_lines:
-        return
-
-    while len(info_lines) < len(_LOGO):
-        info_lines.append("")
-
-    console.print()
-    for logo_line, info_line in zip(_LOGO, info_lines, strict=False):
-        padding = "  " if info_line else ""
-        console.print(f"  [{logo_color}]{logo_line}[/{logo_color}]{padding}{info_line}")
-    console.print()
-
-
-def run_tui(args: argparse.Namespace, *, extra_tools: list[str] | None) -> None:
-    app = Kon(
-        model=args.model,
-        provider=args.provider,
-        api_key=args.api_key,
-        base_url=args.base_url,
-        resume_session=args.resume_session,
-        continue_recent=args.continue_recent,
-        extra_tools=extra_tools,
-        openai_compat_auth_mode=args.openai_compat_auth,
-        anthropic_compat_auth_mode=args.anthropic_compat_auth,
-    )
-    app.run()
-
-    hints = list(app._exit_hints)
-    session_id: str | None = None
-    duration: float | None = None
-    file_changes: dict[str, tuple[int, int]] | None = None
-
-    if app._session:
-        session_id = app._session.id
-        file_changes = app._session.file_changes_summary() or None
-    if app._session_start_time is not None:
-        duration = time.time() - app._session_start_time
-
-    if hints or session_id:
-        _print_exit_message(hints, session_id, duration, file_changes)
