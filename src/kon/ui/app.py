@@ -171,6 +171,7 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
         self._pending_update_notice_version: str | None = None
         self._update_notice_shown = False
         self._startup_complete = False
+        self._git_branch_refresh_inflight = False
         self._launch_warnings: list[LaunchWarning] = []
 
         cli_extra = extra_tools or []
@@ -398,12 +399,18 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
 
         gc.freeze()
 
-    def _refresh_git_branch(self) -> None:
-        info_bar = self.query_one("#info-bar", InfoBar)
-        info_bar.refresh_git_branch()
+    async def _refresh_git_branch(self) -> None:
+        # Skip the tick if the previous refresh is still resolving in its thread.
+        if self._git_branch_refresh_inflight:
+            return
+        self._git_branch_refresh_inflight = True
+        try:
+            info_bar = self.query_one("#info-bar", InfoBar)
+            await info_bar.refresh_git_branch()
+        finally:
+            self._git_branch_refresh_inflight = False
 
-    async def _collect_file_paths(self) -> None:
-        """Collect file paths using glob (fallback when fd is unavailable)."""
+    def _scan_file_paths(self) -> list[str]:
         patterns = [
             "**/*.py",
             "**/*.js",
@@ -423,7 +430,12 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
                     (".git", "node_modules", "__pycache__", ".venv", "venv")
                 ):
                     paths.append(rel_path)
-        paths = sorted(paths)
+        return sorted(paths)
+
+    async def _collect_file_paths(self) -> None:
+        """Collect file paths using glob (fallback when fd is unavailable)."""
+        # The recursive glob can take seconds on large repos; keep it off the event loop.
+        paths = await asyncio.to_thread(self._scan_file_paths)
         self.query_one("#input-box", InputBox).set_file_paths(paths)
 
     async def _ensure_binaries(self) -> None:
@@ -1261,9 +1273,12 @@ class Kon(CommandsMixin, SessionUIMixin, App[None]):
                                 self._current_block_type = None
                             chat.show_spinner_status("Auto-compacting...")
 
-                        case CompactionEndEvent(tokens_before=tb, aborted=ab):
+                        case CompactionEndEvent(tokens_before=tb, aborted=ab, reason=why):
                             if ab:
-                                chat.show_status("Compaction failed")
+                                msg = "Compaction failed"
+                                if why:
+                                    msg += f": {why}"
+                                chat.show_status(msg)
                             else:
                                 chat.add_compaction_message(tb)
 

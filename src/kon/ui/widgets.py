@@ -1,3 +1,4 @@
+import asyncio
 import os
 import time
 from typing import ClassVar
@@ -289,8 +290,10 @@ class InfoBar(Vertical):
         self._git_branch = branch
         self.query_one("#info-cwd", Label).update(self._format_row1_left(), layout=False)
 
-    def refresh_git_branch(self) -> None:
-        self.set_git_branch(get_git_branch(self._raw_cwd))
+    async def refresh_git_branch(self) -> None:
+        # Branch resolution reads git metadata files and may shell out to git;
+        # run it off the event loop so the UI never blocks on it.
+        self.set_git_branch(await asyncio.to_thread(get_git_branch, self._raw_cwd))
 
     def set_thinking_level(self, thinking_level: str) -> None:
         self._thinking_level = thinking_level
