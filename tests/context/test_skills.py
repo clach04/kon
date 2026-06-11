@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from kon.context.skills import (
     Skill,
     _load_skill_from_dir,
@@ -495,6 +497,25 @@ Body here
         assert "focus on testing" in prompt
         assert "$ARGUMENTS" not in prompt
 
+    def test_render_skill_prompt_states_skill_directory_for_relative_paths(self):
+        skill = next((s for s in load_builtin_cmd_skills().skills if s.name == "init"), None)
+
+        assert skill is not None
+        prompt = render_skill_prompt(skill, "")
+
+        skill_dir = str(Path(skill.path).parent)
+        assert prompt.startswith(f'<skill name="init" location="{skill.path}">')
+        assert f"References are relative to {skill_dir}." in prompt
+        assert prompt.endswith("</skill>")
+
+    def test_render_skill_prompt_falls_back_without_wrapper_when_file_missing(self):
+        skill = Skill(name="ghost", description="A skill", path="/nonexistent/SKILL.md")
+
+        prompt = render_skill_prompt(skill, "do the thing")
+
+        assert "<skill" not in prompt
+        assert prompt == "A skill\n\ndo the thing"
+
     def test_render_review_skill_mentions_pr_scenario(self):
         skill = next((s for s in load_builtin_cmd_skills().skills if s.name == "review"), None)
 
@@ -539,6 +560,7 @@ class TestFormatSkillsForPrompt:
         result = formatted_skills(skills)
 
         assert "# Skills" in result
+        assert "resolve it against the skill's directory" in result
         assert "<available_skills>" in result
         assert "<name>test-skill</name>" in result
         assert "<description>A test skill</description>" in result

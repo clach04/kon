@@ -324,8 +324,15 @@ def render_skill_prompt(skill: Skill, query: str) -> str:
     except Exception:
         return _build_fallback_skill_prompt(skill.description, query)
     template = strip_frontmatter(content)
-    rendered = template.replace("$ARGUMENTS", query)
-    return rendered.strip()
+    rendered = template.replace("$ARGUMENTS", query).strip()
+    skill_dir = str(Path(skill.path).parent)
+    return (
+        f'<skill name="{escape_xml(skill.name)}" location="{escape_xml(skill.path)}">\n'
+        f"References are relative to {skill_dir}.\n"
+        f"\n"
+        f"{rendered}\n"
+        f"</skill>"
+    )
 
 
 def _build_fallback_skill_prompt(description: str, query: str) -> str:
@@ -356,6 +363,9 @@ def formatted_skills(skills: list[Skill]) -> str:
         "",
         "The following skills provide specialized instructions for specific tasks.",
         "Use the read tool to load a skill's file when the task matches its description.",
+        "When a skill file references a relative path, resolve it against the skill's "
+        "directory (the parent of its SKILL.md) and use that absolute path in tool "
+        "calls, not a path relative to the current working directory.",
         "If a skill is manually triggered via slash command, its description is "
         "already included in the user message, so you usually don't need to read "
         "the skill file unless you need additional detail.",
