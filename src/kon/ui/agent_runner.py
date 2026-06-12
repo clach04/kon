@@ -355,6 +355,21 @@ class AgentRunnerMixin:
                 BashParams(command=command), cancel_event=cancel_event, inline_output=False
             )
 
+            # Persist the command and its output so session resume and /export
+            # include manual shell commands, not just agent tool calls.
+            session = self._runtime.session
+            if session is not None:
+                prefix = "!!" if send_to_llm else "!"
+                session.append_custom_message(
+                    "shell_command",
+                    f"{prefix}{command}",
+                    details={
+                        "command": command,
+                        "output": result.result or "",
+                        "success": result.success,
+                    },
+                )
+
             # Start tool block and route the result through ChatLog so manual
             # shell commands use the same rendering/expansion path as agent tools.
             self._shell_tool_counter += 1

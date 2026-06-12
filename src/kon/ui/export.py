@@ -657,6 +657,16 @@ class ExportRenderer:
 
         self._end_assistant_turn()
 
+        if entry_type == "custom_message" and entry.get("custom_type") == "shell_command":
+            details = entry.get("details") or {}
+            command = str(details.get("command") or entry.get("content") or "")
+            output = str(details.get("output") or "")
+            success = bool(details.get("success", True))
+            self.builder.tool_block(
+                "Bash", f"$ {command}", result_text=_truncate(output), error=not success
+            )
+            return
+
         if entry_type == "model_change":
             model_id = entry.get("model_id") or "unknown"
             provider = entry.get("provider") or "unknown"

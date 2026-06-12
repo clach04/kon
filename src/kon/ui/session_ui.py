@@ -149,6 +149,16 @@ class SessionUIMixin:
                         query=query,
                         direction="forward",
                     )
+                elif entry.custom_type == "shell_command":
+                    details = entry.details or {}
+                    command = str(details.get("command") or "")
+                    output = str(details.get("output") or "")
+                    success = bool(details.get("success", True))
+                    tool_id = f"shell-replay-{entry.id}"
+                    chat.start_tool("bash", tool_id, f"$ {command}", icon="$")
+                    chat.set_tool_result(
+                        tool_id, None, output or "(no output)", success, markup=False
+                    )
                 elif entry.display:
                     chat.add_info_message(entry.content)
 
