@@ -21,6 +21,7 @@ def _patch_subprocess(monkeypatch, proc: _FakeProcess) -> None:
         return proc
 
     monkeypatch.setattr(asyncio, "create_subprocess_shell", mock_create)
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", mock_create)
 
 
 def _stdout_with_lines(line_count: int) -> bytes:

@@ -48,7 +48,22 @@ def _get_shell() -> str | None:
             if path and os.path.exists(path):
                 return path
         return None
-    return os.environ.get("SHELL", "/bin/bash")
+    return os.environ.get("SHELL") or "/bin/bash"
+
+
+def _get_spawn_argv(command: str) -> list[str] | None:
+    """Return the argv to exec the command through a shell, or None to use the
+    platform's default shell mechanism.
+
+    The exec form is required on Windows: passing the shell as `executable=` to
+    create_subprocess_shell formats it unquoted into the command line, so a Git
+    bash path like "C:\\Program Files\\Git\\bin\\bash.exe" splits at the space
+    (and bash would receive cmd's /c instead of -c).
+    """
+    shell = _get_shell()
+    if shell is None:
+        return None
+    return [shell, "-c", command]
 
 
 def _sanitize_output(text: str) -> str:
@@ -210,15 +225,25 @@ class BashTool(BaseTool):
 
         proc = None
         try:
-            proc = await asyncio.create_subprocess_shell(
-                command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                stdin=asyncio.subprocess.DEVNULL,
-                env=_get_env(),
-                executable=_get_shell(),
-                start_new_session=not _IS_WINDOWS,
-            )
+            spawn_argv = _get_spawn_argv(command)
+            if spawn_argv is None:
+                proc = await asyncio.create_subprocess_shell(
+                    command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    stdin=asyncio.subprocess.DEVNULL,
+                    env=_get_env(),
+                    start_new_session=not _IS_WINDOWS,
+                )
+            else:
+                proc = await asyncio.create_subprocess_exec(
+                    *spawn_argv,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    stdin=asyncio.subprocess.DEVNULL,
+                    env=_get_env(),
+                    start_new_session=not _IS_WINDOWS,
+                )
 
             comm_task = asyncio.create_task(proc.communicate())
 

@@ -73,6 +73,7 @@ async def test_bash_cancellation_waits_for_communicate_cleanup(monkeypatch):
         await process.wait()
 
     monkeypatch.setattr(asyncio, "create_subprocess_shell", mock_create_subprocess_shell)
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", mock_create_subprocess_shell)
     monkeypatch.setattr("kon.tools.bash._kill_process_tree", mock_kill_process_tree)
 
     cancel_event = asyncio.Event()
