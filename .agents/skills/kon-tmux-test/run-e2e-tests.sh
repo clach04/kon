@@ -29,8 +29,8 @@ capture() {
 }
 
 capture_config() {
-    if [ -f "$TEST_HOME/.kon/config.toml" ]; then
-        cp "$TEST_HOME/.kon/config.toml" "$1"
+    if [ -f "$TEST_HOME/.config/kon/config.toml" ]; then
+        cp "$TEST_HOME/.config/kon/config.toml" "$1"
     else
         echo "CONFIG_NOT_FOUND" > "$1"
     fi
@@ -74,12 +74,12 @@ trap cleanup EXIT
 echo "Setting up isolated e2e environment..."
 cleanup
 rm -rf "$TEST_DIR" "$TEST_HOME"
-mkdir -p "$TEST_DIR" "$TEST_HOME/.kon"
-if [ -f "$HOME/.kon/openai_auth.json" ]; then
-    cp "$HOME/.kon/openai_auth.json" "$TEST_HOME/.kon/openai_auth.json"
+mkdir -p "$TEST_DIR" "$TEST_HOME/.config/kon"
+if [ -f "$HOME/.config/kon/openai_auth.json" ]; then
+    cp "$HOME/.config/kon/openai_auth.json" "$TEST_HOME/.config/kon/openai_auth.json"
 fi
-if [ -f "$HOME/.kon/copilot_auth.json" ]; then
-    cp "$HOME/.kon/copilot_auth.json" "$TEST_HOME/.kon/copilot_auth.json"
+if [ -f "$HOME/.config/kon/copilot_auth.json" ]; then
+    cp "$HOME/.config/kon/copilot_auth.json" "$TEST_HOME/.config/kon/copilot_auth.json"
 fi
 cd "$TEST_DIR" || exit 1
 printf '# Test Project\n' > README.md
@@ -288,7 +288,7 @@ clear_input
 # =============================================================================
 echo "Capturing file system and persisted state..."
 ls -la "$TEST_DIR" > /tmp/kon-test-files.txt 2>/dev/null
-find "$TEST_HOME/.kon/sessions" -type f -name '*.jsonl' -print > /tmp/kon-test-session-files.txt 2>/dev/null || true
+find "$TEST_HOME/.config/kon/sessions" -type f -name '*.jsonl' -print > /tmp/kon-test-session-files.txt 2>/dev/null || true
 capture_config /tmp/kon-test-final-config.txt
 
 # Retry a few times in case the LLM is still finishing file writes
