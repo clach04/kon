@@ -25,6 +25,7 @@ def test_get_tool_path_returns_config_bin_fd(monkeypatch: pytest.MonkeyPatch, tm
     fd_path.write_text("", encoding="utf-8")
 
     monkeypatch.setattr("kon.tools_manager._BIN_DIR", bin_dir)
+    monkeypatch.setattr("kon.tools_manager._get_platform", lambda: "linux")
 
     assert get_tool_path("fd") == str(fd_path)
 

@@ -27,8 +27,8 @@ MAX_CMD_INFO_LENGTH = 32
 def shorten_path(path: str) -> str:
     home = os.path.expanduser("~")
     if path.startswith(home):
-        return "~" + path[len(home) :]
-    return path
+        path = "~" + path[len(home) :]
+    return path.replace(os.sep, "/")
 
 
 def _parse_bool(value: Any) -> bool:
