@@ -1,4 +1,5 @@
 import os
+import platform
 from datetime import datetime
 from pathlib import Path
 
@@ -53,6 +54,8 @@ async def test_read_path_not_found(read_tool, tmp_path):
 
 @pytest.mark.asyncio
 async def test_read_not_a_file_or_directory(read_tool, tmp_path):
+    if platform.system().lower() == "windows":
+        pytest.skip("os.mkfifo not supported on Windows")
     fifo_path = tmp_path / "myfifo"
     os.mkfifo(fifo_path)
     result = await read_tool.execute(ReadParams(path=str(fifo_path)))
