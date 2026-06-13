@@ -56,7 +56,8 @@ default_context_window = 200000
 
 [tools]
 # Additional opt-in built-in tools to expose beyond the default tool set.
-extra = ["web_search", "web_fetch"]
+# Uncomment below to enable
+#extra = ["web_search", "web_fetch"]
 
 [ui]
 theme = "gruvbox-dark"
