@@ -11,6 +11,7 @@ _SHORTCUT_ROWS = (
     (("shift+tab", "permissions"), ("esc", "to interrupt"), ("shift+enter", "add newline")),
     (("ctrl+c", "clear input"), ("ctrl+c x2", "exit"), ("enter", "queue"), ("alt+enter", "steer")),
     (("↑/↓", "select queue"), ("ctrl+t", "cycle thinking"), ("ctrl+shift+t", "toggle thinking")),
+    (("ctrl+v/shift+ins", "paste system clipboard"), ("selection", "auto-copies")),
 )
 
 

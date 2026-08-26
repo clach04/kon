@@ -30,6 +30,7 @@ from .autocomplete import (
     SlashCommand,
     SlashCommandProvider,
 )
+from .clipboard import read_system_clipboard
 from .floating_list import ListItem
 from .image_clipboard import save_clipboard_image
 from .path_complete import PathComplete
@@ -192,7 +193,7 @@ class InputBox(Vertical):
     """
 
     BINDINGS: ClassVar[list] = [
-        Binding("ctrl+v", "paste_clipboard", "Paste", priority=True),
+        Binding("ctrl+v,ctrl+shift+v,shift+insert", "paste_clipboard", "Paste", priority=True),
         Binding("enter", "submit", "Send", priority=True),
         Binding("ctrl+j,shift+enter", "newline", "New line", priority=True),
         Binding("alt+enter", "steer_submit", "Steer", priority=True),
@@ -483,8 +484,12 @@ class InputBox(Vertical):
                 if temporary:
                     path.unlink(missing_ok=True)
 
-        textarea = self.query_one("#input-textarea", TextArea)
-        textarea.action_paste()
+        system_text = read_system_clipboard()
+        if system_text:
+            self.insert(system_text)
+            return
+        # Fallback: Textual's internal clipboard (e.g. selection copied in-app).
+        self.query_one("#input-textarea", TextArea).action_paste()
 
     def _strip_skill_markers(self, text: str) -> str:
         return text.replace(_SKILL_TRIGGER_MARKER, "")

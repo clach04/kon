@@ -42,6 +42,7 @@ from .agent_runner import AgentRunnerMixin
 from .autocomplete import DEFAULT_COMMANDS, SlashCommand
 from .blocks import HandoffLinkBlock, LaunchWarning
 from .chat import ChatLog
+from .clipboard import copy_to_clipboard as ui_copy_to_clipboard
 from .commands import CommandsMixin
 from .completion_ui import CompletionUIMixin
 from .floating_list import FloatingList, ListItem
@@ -306,6 +307,12 @@ class Kon(
     def _sync_runtime_state(self) -> None:
         # Compatibility hook for mixin/unit-test fakes. Runtime is the source of truth.
         return None
+
+    def copy_to_clipboard(self, text: str) -> None:
+        # Update Textual's internal clipboard (fallback) and mirror to the OS
+        # clipboard so copies work outside the terminal.
+        super().copy_to_clipboard(text)
+        ui_copy_to_clipboard(text)
 
     @on(events.TextSelected)
     def _on_text_selected(self) -> None:

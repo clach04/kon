@@ -85,6 +85,12 @@ def run_tui(args: argparse.Namespace, *, extra_tools: list[str] | None) -> None:
         openai_compat_auth_mode=args.openai_compat_auth,
         anthropic_compat_auth_mode=args.anthropic_compat_auth,
     )
+    # TODO: Textual captures mouse input (SGR tracking) by default, so native
+    # terminal selection does not work inside Kon. In particular, under
+    # CMD.exe/conhost right-click does NOT paste, and CMD's mark/copy menu is
+    # required for selecting text outside Kon's own selection handling.
+    # Passing mouse=False to run() would restore native selection/paste at the
+    # cost of in-TUI mouse support; revisit if requested.
     app.run()
 
     hints = list(app._exit_hints)

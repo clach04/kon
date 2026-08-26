@@ -319,6 +319,23 @@ Kon is built around a terminal UI that stays simple but practical.
 | Model switching | Use `/model` to switch interactively |
 | Session browsing | Use `/resume` to browse prior sessions |
 
+### Keyboard and clipboard
+
+Kon's TUI captures mouse input, so your terminal's native text selection (e.g. CMD.exe's
+mark/copy menu, or drag-select in other terminals) does not select Kon text. Use the
+clipboard shortcuts instead:
+
+| Key | Action |
+| --- | --- |
+| Mouse selection | Automatically copied to the system clipboard |
+| **Ctrl+V** | Paste from the system clipboard into the input (images too) |
+| **Ctrl+Shift+V** / **Shift+Insert** | Also paste from the system clipboard |
+| **Ctrl+C** | Clear the input, or exit when pressed twice (no selection) |
+
+Copies inside Kon (mouse selection auto-copies) go to your OS clipboard and can be pasted
+into any application; pastes read from the OS clipboard first, falling back to Kon's
+internal selection buffer.
+
 ### Slash commands
 
 Type `/` at the start of the input box to see available commands.
