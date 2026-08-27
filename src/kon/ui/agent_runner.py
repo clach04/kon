@@ -116,7 +116,9 @@ class AgentRunnerMixin:
             if self._interrupt_requested:
                 self._cancel_event.set()
 
-            status.set_status("working")
+            # Status stays "waiting" (set synchronously at submit) until the
+            # first streamed delta arrives; _render_agent_event promotes it.
+            self._stream_started = False
 
             try:
                 async for event in agent.run(
@@ -179,6 +181,13 @@ class AgentRunnerMixin:
         self._update_queue_display()
         return _unpack_queue_item(queued)
 
+    def _promote_to_working(self, status: StatusLine) -> None:
+        """Switch from 'waiting' to 'working' once the model starts streaming."""
+        if self._stream_started:
+            return
+        self._stream_started = True
+        status.set_status("working")
+
     async def _render_agent_event(
         self, event: object, chat: ChatLog, status: StatusLine, info_bar: InfoBar
     ) -> bool:
@@ -202,6 +211,7 @@ class AgentRunnerMixin:
                     self._current_block_type = "thinking"
 
             case ThinkingDeltaEvent(delta=d):
+                self._promote_to_working(status)
                 await chat.append_to_current(d)
 
             case ThinkingEndEvent():
@@ -215,6 +225,7 @@ class AgentRunnerMixin:
                     self._current_block_type = "content"
 
             case TextDeltaEvent(delta=d):
+                self._promote_to_working(status)
                 await chat.append_to_current(d)
 
             case TextEndEvent():

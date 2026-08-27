@@ -632,7 +632,7 @@ class Kon(
     # -------------------------------------------------------------------------
 
     @on(InputBox.Submitted)
-    def on_input_submitted(self, event: InputBox.Submitted) -> None:
+    async def on_input_submitted(self, event: InputBox.Submitted) -> None:
         display_text = event.text.strip()
         if not display_text:
             return
@@ -682,8 +682,14 @@ class Kon(
             self._update_queue_display()
             return
 
+        self._is_running = True
+        # Immediate feedback: show the waiting state synchronously so the user
+        # knows the input was received, before any worker/IO latency.
+        self.query_one("#status-line", StatusLine).set_status("waiting")
+        # Yield so Textual paints the waiting status before the (potentially
+        # slow) message render and agent worker get a chance to run.
+        await asyncio.sleep(0)
+
         chat = self.query_one("#chat-log", ChatLog)
         chat.add_user_message(display_text, highlighted_skill=highlighted_skill)
-
-        self._is_running = True
         self.run_worker(self._run_agent(query_text, event.images), exclusive=True)

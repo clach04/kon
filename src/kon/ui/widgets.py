@@ -466,7 +466,10 @@ class StatusLine(Horizontal):
             result.append(str(spinner_text), style=spinner_color)
         else:
             result.append(str(spinner_text), style=spinner_color)
-        result.append(" Working...", style=config.ui.colors.subtle)
+        if self._status == "waiting":
+            result.append(" Sent — waiting for model...", style=config.ui.colors.subtle)
+        else:
+            result.append(" Working...", style=config.ui.colors.subtle)
         result.append(" (", style=config.ui.colors.subtle)
         result.append("esc", style=f"{dim_color} bold")
         result.append(" to interrupt)", style=config.ui.colors.subtle)
