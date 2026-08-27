@@ -132,7 +132,8 @@ class OpenAICompletionsProvider(BaseProvider):
         if not api_key:
             raise ValueError(
                 f"No API key found for {self.name}. "
-                "Set OPENAI_API_KEY, DEEPSEEK_API_KEY, or ZAI_API_KEY environment variable, "
+                "Set OPENAI_API_KEY, DEEPSEEK_API_KEY, ZAI_API_KEY, or OPENROUTER_API_KEY "
+                "environment variable, "
                 'or configure llm.auth.openai_compat = "auto"/"none" for local endpoints.'
             )
         self._client = AsyncOpenAI(
@@ -152,6 +153,8 @@ class OpenAICompletionsProvider(BaseProvider):
 
         if provider == "deepseek" or "api.deepseek.com" in base_url:
             return ("DEEPSEEK_API_KEY", "OPENAI_API_KEY")
+        if provider == "openrouter" or "openrouter.ai" in base_url:
+            return ("OPENROUTER_API_KEY",)
         if provider in {"zai", "zhipu"} or "api.z.ai" in base_url:
             return ("ZAI_API_KEY", "OPENAI_API_KEY")
 

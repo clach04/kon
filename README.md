@@ -68,7 +68,7 @@ kon
 
 ```text
 usage: kon [-h] [--model MODEL]
-           [--provider {azure-ai-foundry,deepseek,github-copilot,openai,openai-codex,openai-responses,xai,zhipu}]
+           [--provider {azure-ai-foundry,deepseek,github-copilot,openai,openai-codex,openai-responses,openrouter,xai,zhipu}]
            [--prompt [PROMPT]] [--api-key API_KEY] [--base-url BASE_URL]
            [--openai-compat-auth {auto,required,none}]
            [--anthropic-compat-auth {auto,required,none}]
@@ -80,7 +80,7 @@ Kon
 options:
   -h, --help            show this help message and exit
   --model, -m MODEL     Model to use
-  --provider {azure-ai-foundry,deepseek,github-copilot,openai,openai-codex,openai-responses,xai,zhipu}
+  --provider {azure-ai-foundry,deepseek,github-copilot,openai,openai-codex,openai-responses,openrouter,xai,zhipu}
                         Provider to use
   --prompt, -p [PROMPT]
                         Run a single prompt non-interactively, then exit (omit
@@ -547,6 +547,7 @@ Built-in provider support includes:
 - **OpenAI Responses / OpenAI-compatible endpoints**
 - **Azure AI Foundry**
 - **DeepSeek**
+- **OpenRouter**
 - **xAI Grok**
 - **ZhiPu**
 
@@ -562,6 +563,7 @@ Kon supports both OAuth login flows and direct API-key configuration.
 - **OpenAI-compatible providers**: use `OPENAI_API_KEY` or provider-specific equivalents
   - OpenAI/default: `OPENAI_API_KEY` only
   - DeepSeek: `DEEPSEEK_API_KEY` first, then `OPENAI_API_KEY`
+  - OpenRouter: `OPENROUTER_API_KEY`
   - ZhiPu/ZAI: `ZAI_API_KEY` first, then `OPENAI_API_KEY`
 - **Azure AI Foundry**: set `AZURE_AI_FOUNDRY_API_KEY` and `AZURE_AI_FOUNDRY_BASE_URL`
 
@@ -570,7 +572,10 @@ You can also pass API-key credentials directly on launch:
 ```bash
 kon --provider openai --model some-model --api-key "$OPENAI_API_KEY"
 kon --provider deepseek --model deepseek-v4-flash
+kon --provider openrouter --model vendor/model-name
 ```
+
+Any OpenRouter model ID (e.g. `anthropic/claude-sonnet-4`) works with `--model` — OpenRouter's full catalog isn't duplicated in Kon's model list.
 
 After signing in to xAI via `/login`, launch Grok with:
 

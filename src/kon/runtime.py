@@ -25,7 +25,9 @@ from .session import CustomMessageEntry, MessageEntry, Session
 from .tools import BaseTool
 
 
-def default_base_url_for_api(api_type: ApiType) -> str | None:
+def default_base_url_for_api(api_type: ApiType, provider: str | None = None) -> str | None:
+    if provider == "openrouter":
+        return os.environ.get("KON_BASE_URL", "https://openrouter.ai/api/v1")
     if api_type == ApiType.OPENAI_COMPLETIONS:
         return os.environ.get("KON_BASE_URL", "https://api.z.ai/api/coding/paas/v4")
     return None
@@ -145,7 +147,9 @@ class ConversationRuntime:
         api_type = resolve_provider_api_type(effective_provider)
         return (
             api_type,
-            self.explicit_base_url or config_override or default_base_url_for_api(api_type),
+            self.explicit_base_url
+            or config_override
+            or default_base_url_for_api(api_type, effective_provider),
         )
 
     def _new_agent(

@@ -5,6 +5,7 @@ PROVIDER_API_BY_NAME: dict[str, ApiType] = {
     "openai": ApiType.OPENAI_COMPLETIONS,
     "zhipu": ApiType.OPENAI_COMPLETIONS,
     "deepseek": ApiType.OPENAI_COMPLETIONS,
+    "openrouter": ApiType.OPENAI_COMPLETIONS,
     "xai": ApiType.XAI_RESPONSES,
     "github-copilot": ApiType.GITHUB_COPILOT,
     "openai-responses": ApiType.OPENAI_RESPONSES,
