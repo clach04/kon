@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Added `--register-skills` flag and `KON_AUTO_REGISTER_SKILLS` environment variable to register skills as slash commands even when their SKILL.md frontmatter omits `register_cmd`. Omitted keys are treated as `only`; explicit values are always honored. The CLI flag takes precedence over the environment variable, and auto-register is ignored in headless mode (`-p`).
+
 ### Fixed
 
 - Fixed OpenAI Codex Responses Lite error `requires reasoning.context to be all_turns` by always sending `reasoning.context: "all_turns"` for GPT-5.6 Codex models, even when thinking is disabled.

@@ -50,6 +50,13 @@ def build_parser() -> argparse.ArgumentParser:
         dest="resume_session",
         help="Resume a specific session by ID (full or unique prefix)",
     )
+    parser.add_argument(
+        "--register-skills",
+        action="store_true",
+        dest="register_skills",
+        help="Register skills as slash commands even without register_cmd in their "
+        "frontmatter (treated as 'only'; see also KON_AUTO_REGISTER_SKILLS)",
+    )
     parser.add_argument("--version", action="version", version=f"kon {VERSION}")
     parser.add_argument(
         "--extra-tools", help="Comma-separated extra tools to enable (e.g. web_search,web_fetch)"
@@ -66,6 +73,12 @@ def main() -> None:
 
     if args.insecure_skip_verify:
         config.llm.tls.insecure_skip_verify = True
+
+    if args.prompt is None:
+        from .context.skills import resolve_auto_register, set_auto_register
+
+        if resolve_auto_register(args.register_skills):
+            set_auto_register(True)
 
     extra_tools = (
         [t.strip() for t in args.extra_tools.split(",") if t.strip()] if args.extra_tools else None

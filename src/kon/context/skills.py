@@ -23,6 +23,25 @@ MAX_NAME_LENGTH = 64
 MAX_DESCRIPTION_LENGTH = 1024
 MAX_CMD_INFO_LENGTH = 32
 
+# Session-scoped auto-register setting. When True, skills whose SKILL.md
+# frontmatter omits `register_cmd` are treated as `only` (registered as slash
+# commands, excluded from the system prompt). Set by the CLI in interactive
+# mode via --register-skills / KON_AUTO_REGISTER_SKILLS; explicit frontmatter
+# values are always honored.
+_auto_register_skills = False
+
+
+def set_auto_register(enabled: bool) -> None:
+    global _auto_register_skills
+    _auto_register_skills = enabled
+
+
+def resolve_auto_register(flag: bool) -> bool:
+    """CLI flag wins over the KON_AUTO_REGISTER_SKILLS environment variable."""
+    if flag:
+        return True
+    return _parse_bool(os.environ.get("KON_AUTO_REGISTER_SKILLS"))
+
 
 def shorten_path(path: str) -> str:
     home = os.path.expanduser("~")
@@ -164,9 +183,13 @@ def _load_skill_from_dir(skill_dir: Path) -> tuple[Skill | None, list[SkillWarni
         parent_dir_name = skill_dir.name
         name = frontmatter.get("name") or parent_dir_name
         description = frontmatter.get("description", "")
+        register_cmd_present = "register_cmd" in frontmatter
         register_cmd_value = str(frontmatter.get("register_cmd", "")).strip().lower()
         cmd_only = register_cmd_value == "only"
         register_cmd = cmd_only or _parse_bool(frontmatter.get("register_cmd"))
+        if not register_cmd_present and _auto_register_skills:
+            cmd_only = True
+            register_cmd = True
         cmd_info = str(frontmatter.get("cmd_info", "")).strip()
 
         warnings = _validate_skill(

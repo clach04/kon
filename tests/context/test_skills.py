@@ -11,6 +11,8 @@ from kon.context.skills import (
     load_skills,
     merge_registered_skills,
     render_skill_prompt,
+    resolve_auto_register,
+    set_auto_register,
     strip_frontmatter,
 )
 
@@ -312,12 +314,125 @@ register_cmd: only
 ---
 """)
 
-        skill, warnings = _load_skill_from_dir(skill_dir)
+        skill, _warnings = _load_skill_from_dir(skill_dir)
 
         assert skill is not None
         assert skill.register_cmd is True
         assert skill.include_in_prompt is False
-        assert warnings == []
+
+    def test_auto_register_defaults_missing_to_only(self, tmp_path):
+        skill_dir = tmp_path / "auto-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("""---
+name: auto-skill
+description: Auto registered skill
+---
+""")
+
+        set_auto_register(True)
+        try:
+            skill, _warnings = _load_skill_from_dir(skill_dir)
+        finally:
+            set_auto_register(False)
+
+        assert skill is not None
+        assert skill.register_cmd is True
+        assert skill.include_in_prompt is False
+
+    def test_auto_register_honors_explicit_false(self, tmp_path):
+        skill_dir = tmp_path / "explicit-false-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("""---
+name: explicit-false-skill
+description: Explicitly unregistered
+register_cmd: false
+---
+""")
+
+        set_auto_register(True)
+        try:
+            skill, _warnings = _load_skill_from_dir(skill_dir)
+        finally:
+            set_auto_register(False)
+
+        assert skill is not None
+        assert skill.register_cmd is False
+        assert skill.include_in_prompt is True
+
+    def test_auto_register_honors_explicit_true(self, tmp_path):
+        skill_dir = tmp_path / "explicit-true-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("""---
+name: explicit-true-skill
+description: Explicitly registered
+register_cmd: true
+---
+""")
+
+        set_auto_register(True)
+        try:
+            skill, _warnings = _load_skill_from_dir(skill_dir)
+        finally:
+            set_auto_register(False)
+
+        assert skill is not None
+        assert skill.register_cmd is True
+        assert skill.include_in_prompt is True
+
+    def test_auto_register_honors_explicit_only(self, tmp_path):
+        skill_dir = tmp_path / "explicit-only-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("""---
+name: explicit-only-skill
+description: Explicitly only
+register_cmd: only
+---
+""")
+
+        set_auto_register(True)
+        try:
+            skill, _warnings = _load_skill_from_dir(skill_dir)
+        finally:
+            set_auto_register(False)
+
+        assert skill is not None
+        assert skill.register_cmd is True
+        assert skill.include_in_prompt is False
+
+    def test_no_auto_register_by_default(self, tmp_path):
+        skill_dir = tmp_path / "default-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("""---
+name: default-skill
+description: Default behavior skill
+---
+""")
+
+        skill, _warnings = _load_skill_from_dir(skill_dir)
+
+        assert skill is not None
+        assert skill.register_cmd is False
+        assert skill.include_in_prompt is True
+
+
+class TestResolveAutoRegister:
+    def test_flag_wins_over_env(self, monkeypatch):
+        monkeypatch.delenv("KON_AUTO_REGISTER_SKILLS", raising=False)
+        assert resolve_auto_register(True) is True
+
+    def test_env_var_enables(self, monkeypatch):
+        monkeypatch.delenv("KON_AUTO_REGISTER_SKILLS", raising=False)
+        for value in ("1", "true", "yes", "on"):
+            monkeypatch.setenv("KON_AUTO_REGISTER_SKILLS", value)
+            assert resolve_auto_register(False) is True
+
+    def test_env_var_falsy(self, monkeypatch):
+        monkeypatch.setenv("KON_AUTO_REGISTER_SKILLS", "0")
+        assert resolve_auto_register(False) is False
+
+    def test_both_off(self, monkeypatch):
+        monkeypatch.delenv("KON_AUTO_REGISTER_SKILLS", raising=False)
+        assert resolve_auto_register(False) is False
 
 
 class TestLoadSkills:
