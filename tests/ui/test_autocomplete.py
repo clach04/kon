@@ -288,10 +288,10 @@ def test_default_slash_commands_include_settings_copy_compact_and_handoff():
     assert "copy" in names
     assert "compact" in names
     assert "handoff" in names
-    assert "themes" not in names
-    assert "permissions" not in names
-    assert "thinking" not in names
-    assert "notifications" not in names
+    assert "themes" in names
+    assert "permissions" in names
+    assert "thinking" in names
+    assert "notifications" in names
 
 
 def test_slash_provider_triggers_mid_input_for_skills_only():
