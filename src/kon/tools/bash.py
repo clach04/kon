@@ -152,10 +152,11 @@ class BashTool(BaseTool):
     )
     description = (
         "Execute a bash command in the current working directory. "
+        "Local environment is Microsoft Windows with a bash and Unix tools that requires Windows paths to be wrapped in double quotes `\"`. "  # DEBUG clach04
         f"Output truncated to last {MAX_OUTPUT_LINES} lines or {MAX_OUTPUT_BYTES // 1024}KB. "
         "If truncated, full output is saved to a temp file. "
         "Optionally provide a timeout in seconds. "
-        "IMPORTANT: Do NOT use bash for file search (use grep/find tools instead), "
+        "IMPORTANT: Do NOT use bash for file search/find, `dir`, or `ls` (use grep/find tools instead), "
         "reading files (use read), or editing files (use edit)."
     )
 

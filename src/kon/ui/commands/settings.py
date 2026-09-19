@@ -66,6 +66,7 @@ class SettingsCommands(CommandSupport):
         descriptions: dict[PermissionMode, str] = {
             "prompt": "ask before mutating tool calls",
             "auto": "allow tool calls without approval prompts",
+            "write_local": "allow (builtin) write/edit tools to write to project directory without approval prompts",  # DEBUG clach04
         }
         self._handle_choice_command(
             args,

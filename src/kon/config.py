@@ -19,7 +19,8 @@ CONFIG_DIR_NAME: str = "kon"
 
 OnOverflowMode = Literal["continue", "pause"]
 AuthMode = Literal["auto", "required", "none"]
-PermissionMode = Literal["prompt", "auto"]
+#PermissionMode = Literal["prompt", "auto"]
+PermissionMode = Literal["prompt", "auto", "write_local"]  # DEBUG clach04
 NotificationMode = Literal["on", "off"]
 PERMISSION_MODES: tuple[PermissionMode, ...] = get_args(PermissionMode)
 NOTIFICATION_MODES: tuple[NotificationMode, ...] = get_args(NotificationMode)
